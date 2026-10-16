@@ -4,11 +4,13 @@ from __future__ import annotations
 import argparse
 from datetime import datetime
 import threading
+import sqlite3
 
 import pygame
 
 from TkFlow import App, Button, Checkbox, Label, TextArea
 from WeatherService import WeatherService
+from alert_history import AlertHistory
 
 
 # NWS event families. Other active watch/warning types are discovered on refresh.
@@ -23,11 +25,12 @@ EVENT_FAMILIES = (
 
 
 class StormwatchApp:
-    def __init__(self, service=None):
+    def __init__(self, service=None, history=None):
         self.app = App("Stormwatch · Weather intelligence", width=1180, height=800,
                        min_width=900, min_height=620, padding=24, spacing=16,
                        theme="clam")
         self.service = service or WeatherService(interval=60)
+        self.history = history if history is not None else AlertHistory()
         self.snapshot = {}
         self.initialized = False
         self.running = False
@@ -52,6 +55,7 @@ class StormwatchApp:
         # A scrollable TkFlow form keeps the full event catalog accessible.
         from TkFlow import Form
         self.filters = Form(controls, "Event types", expand=True, fill="both", padding=8)
+        self.filters.canvas.configure(background="#0b1424")
         self.choices = {}
         for family in EVENT_FAMILIES:
             for kind in ("Warning", "Watch"):
@@ -169,23 +173,38 @@ class StormwatchApp:
         current, previous = result
         self.state.set("●  MONITORING")
         selected &= self.selected_events()
+        notifications = []
         for alert in current.values():
             self.add_event(alert["event"])
-            old = previous.get(alert["id"])
-            if alert["event"] in selected and (old is None or self.service.get_fingerprint(old) != self.service.get_fingerprint(alert)):
-                self.append_alert(alert, old is not None)
-                if self.initialized:
-                    self.app.run_in_thread(self.send_notification, generation, alert, old is not None,
-                                           on_error=self.notification_error)
+            if alert["event"] not in selected:
+                continue
+            try:
+                is_new = self.history.claim(alert["id"])
+            except sqlite3.Error as error:
+                self.failed(generation, RuntimeError(f"Could not save alert history: {error}"))
+                return
+            if is_new:
+                self.append_alert(alert)
+                critical = alert["event"] in {
+                    "Tornado Warning", "Tornado Watch", "Hurricane Warning", "Hurricane Watch"}
+                if self.initialized or critical:
+                    notifications.append(alert)
+        if notifications:
+            self.app.run_in_thread(self.send_notifications, generation, notifications,
+                                   on_error=self.notification_error)
         self.initialized = True
         self.snapshot = {key: alert for key, alert in current.items() if alert["event"] in selected}
         self.status.set(f"Updated {datetime.now():%H:%M:%S} • {len(self.snapshot)} selected active alerts • Next check in 60 seconds")
         self.timer = self.app.after(self.service.interval * 1000, self.poll)
 
-    def send_notification(self, generation, alert, updated):
-        with self.sound_lock:
-            if self.running and generation == self.generation:
-                self.service.notify(alert, updated=updated)
+    def send_notifications(self, generation, alerts):
+        # One queued job avoids exhausting TkFlow's bounded worker queue when
+        # a refresh contains many newly issued alerts.
+        for alert in alerts:
+            with self.sound_lock:
+                if not self.running or generation != self.generation:
+                    return
+                self.service.notify(alert, updated=False)
 
     def notification_error(self, error):
         self.status.set(f"Notification unavailable: {error}")
@@ -242,6 +261,7 @@ class StormwatchApp:
         self.generation += 1
         if self.timer is not None:
             self.app.root.after_cancel(self.timer)
+        self.history.close()
         self.app.close()
         # Wait away from Tk for any in-flight request/audio operation to finish.
         threading.Thread(target=self.cleanup, daemon=True).start()

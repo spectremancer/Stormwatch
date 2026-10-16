@@ -176,8 +176,9 @@ class WeatherService:
 
         try:
             notification.notify(
-                title=title,
-                message=alert["area"][:400],
+                # Windows NOTIFYICONDATA permits 63 title / 255 body chars.
+                title=title[:63],
+                message=alert["area"][:255],
                 app_name="US Storm Monitor",
                 timeout=10,
             )

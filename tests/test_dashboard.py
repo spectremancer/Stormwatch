@@ -2,10 +2,12 @@
 import os
 from pathlib import Path
 import time
+import tempfile
 import unittest
 from unittest.mock import Mock
 
 from main import StormwatchApp
+from alert_history import AlertHistory
 from WeatherService import WeatherService
 
 
@@ -17,12 +19,15 @@ class DashboardTests(unittest.TestCase):
         self.service.get_fingerprint.side_effect = lambda alert: WeatherService.get_fingerprint(None, alert)
         self.service.parse_alert.side_effect = lambda feature: WeatherService.parse_alert(None, feature)
         self.service.fetch_alerts.return_value = []
-        self.ui = StormwatchApp(self.service)
+        self.temp = tempfile.TemporaryDirectory()
+        self.history_path = Path(self.temp.name) / "alerts.sqlite3"
+        self.ui = StormwatchApp(self.service, AlertHistory(self.history_path))
         self.ui.app.root.update()
 
     def tearDown(self):
         if not self.ui.app._closed:
             self.ui.close()
+        self.temp.cleanup()
 
     def alert(self, event="Tornado Warning", headline="Take shelter"):
         return dict(id=event, event=event, headline=headline, area="Test County",
@@ -52,7 +57,8 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(self.ui.count, 1)
         self.receive([tornado], self.ui.snapshot)
         self.assertEqual(self.ui.count, 1)
-        self.service.notify.assert_not_called()  # first snapshot is quiet
+        self.pump(lambda: self.service.notify.called)
+        self.assertEqual(self.service.notify.call_count, 1)
 
     def test_new_alert_after_empty_snapshot_notifies(self):
         self.receive([])
@@ -60,13 +66,41 @@ class DashboardTests(unittest.TestCase):
         self.pump(lambda: self.service.notify.called)
         self.assertEqual(self.ui.count, 1)
 
-    def test_updated_alert(self):
+    def test_same_id_is_processed_once_even_if_content_changes(self):
         alert = self.alert()
         self.receive([alert])
         self.receive([self.alert(headline="Updated instructions")], self.ui.snapshot)
+        self.assertEqual(self.ui.count, 1)
+        self.assertNotIn("Updated instructions", self.ui.feed.get())
+
+    def test_history_survives_restart_and_filter_changes(self):
+        alert = self.alert()
+        self.receive([alert])
+        self.receive([])
+        self.ui.clear_feed()
+        self.receive([alert])
+        self.assertEqual(self.ui.count, 0)
+        self.ui.close()
+        self.ui = StormwatchApp(self.service, AlertHistory(self.history_path))
+        self.receive([alert])
+        self.assertEqual(self.ui.count, 0)
+
+    def test_checkboxes_are_above_canvas_and_scroll(self):
+        box = self.ui.choices["Tornado Warning"].widget
+        self.ui.app.root.update()
+        x, y = box.winfo_rootx() + 8, box.winfo_rooty() + 8
+        self.assertEqual(self.ui.app.root.winfo_containing(x, y), box)
+        self.ui.filters.canvas.yview_moveto(1)
+        self.ui.app.root.update()
+        last = self.ui.choices["Tsunami Watch"].widget
+        self.assertTrue(last.winfo_ismapped())
+        self.assertEqual(self.ui.app.root.winfo_containing(
+            last.winfo_rootx() + 8, last.winfo_rooty() + 8), last)
+
+    def test_hurricane_notifies_on_first_refresh(self):
+        self.receive([self.alert("Hurricane Watch")])
         self.pump(lambda: self.service.notify.called)
-        self.assertIn("UPDATED", self.ui.feed.get())
-        self.service.notify.assert_called_with(self.alert(headline="Updated instructions"), updated=True)
+        self.service.notify.assert_called_once_with(self.alert("Hurricane Watch"), updated=False)
 
     def test_pause_discards_inflight_result(self):
         self.ui.running = True

@@ -19,14 +19,28 @@ Choose watch and warning types, then select **Start monitoring**. The dashboard
 refreshes every 60 seconds. **Pause monitoring** stops delivery; an outstanding
 request may finish in the background. Changes to event selections apply on the
 next refresh. Additional active NWS event types appear in the selection list
-unchecked. The first successful refresh displays existing selected alerts quietly;
-subsequent new or updated alerts trigger WeatherService notifications. Tornado
-and hurricane events also play `alert.mp3`.
+unchecked. The first successful refresh displays unseen selected alerts. Previously unseen
+tornado and hurricane watches/warnings also trigger desktop notifications on
+that first refresh, including Windows notifications through plyer. Other event
+types begin notifying after the first successful refresh. Tornado and hurricane
+events also play `alert.mp3`. Windows notification settings and Do Not Disturb
+can affect whether a notification is displayed.
 
 **Test alert sound** plays `alert.mp3` without generating a fake weather alert.
 The read-only feed contains only selected weather alerts. Connection failures,
 retry information, and sound-test results appear in the status bar. **Clear feed**
-clears the display without making unchanged alerts appear again.
+clears the display without making processed alerts appear again.
+
+Alert IDs are recorded in a persistent per-user SQLite database: on Windows,
+`%LOCALAPPDATA%/Stormwatch/processed-alerts.sqlite3`; elsewhere,
+`$XDG_STATE_HOME/Stormwatch/processed-alerts.sqlite3` (defaulting to
+`~/.local/state/Stormwatch/processed-alerts.sqlite3`). Each selected alert ID is
+processed once, even across restarts, filter changes, disappearance/reappearance,
+or changes to its content. A newly issued alert with a new ID is processed normally.
+The history begins with this version; previous GUI sessions did not retain a
+durable record of which alerts they displayed. IDs are recorded before delivery
+to prevent repeats; an interruption or notification failure does not retry the
+same ID.
 
 NWS access requires HTTPS connectivity to `api.weather.gov`. This application is
 an informational monitor; continue to follow official local weather guidance.
