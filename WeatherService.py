@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta, timezone
 import json
 import logging
 import platform
@@ -81,19 +82,80 @@ class WeatherService:
     # ---------- Weather data ----------
 
     def fetch_alerts(self):
-        response = self.session.get(
-            self.API_URL,
-            timeout=20,
-        )
-        response.raise_for_status()
+        return self._features(self.API_URL)
 
-        data = response.json()
-        features = data.get("features")
-
-        if not isinstance(features, list):
-            raise ValueError("Invalid NWS alert response")
-
+    def _features(self, url, params=None):
+        features = []
+        visited = set()
+        while url:
+            # NWS pagination remains on the same trusted API host.
+            from urllib.parse import urlparse
+            if urlparse(url).scheme != "https" or urlparse(url).netloc != "api.weather.gov" or url in visited:
+                raise ValueError("Invalid NWS pagination link")
+            visited.add(url)
+            if len(visited) > 100:
+                raise ValueError("NWS pagination limit exceeded; snapshot is incomplete")
+            response = self.session.get(url, params=params, timeout=20)
+            response.raise_for_status()
+            data = response.json()
+            if not isinstance(data.get("features"), list):
+                raise ValueError("Invalid NWS alert response")
+            features.extend(data["features"])
+            url = (data.get("pagination") or {}).get("next")
+            params = None
         return features
+
+    def fetch_cancellations(self, since=None):
+        since = since or datetime.now(timezone.utc) - timedelta(minutes=15)
+        return self._features("https://api.weather.gov/alerts", {
+            "message_type": "cancel", "start": since.isoformat(), "limit": 500})
+
+    def enrich_boundaries(self, alerts, profiles, max_requests=6):
+        """Cache official affected-zone polygons for alerts without geometry.
+
+        Limit fresh lookups per poll; never draw an incomplete subset of an area.
+        Zone outlines are map context, not precise storm polygons.
+        """
+        from urllib.parse import urlparse
+        from locations import rings
+        if not hasattr(self, "_zone_cache"):
+            self._zone_cache = {}
+        for alert in alerts:
+            if alert.get("geometry") or not any(p.matches(alert) for p in profiles):
+                continue
+            urls = alert.get("zones", [])
+            for url in urls:
+                if url in self._zone_cache or max_requests <= 0:
+                    continue
+                if urlparse(url).scheme != "https" or urlparse(url).netloc != "api.weather.gov":
+                    continue
+                max_requests -= 1
+                try:
+                    response = self.session.get(url, timeout=5)
+                    response.raise_for_status()
+                    geometry = response.json().get("geometry")
+                    if rings(geometry):
+                        self._zone_cache[url] = geometry
+                except (requests.RequestException, ValueError):
+                    continue
+            if urls and all(url in self._zone_cache for url in urls):
+                polygons = [polygon for url in urls for polygon in rings(self._zone_cache[url])]
+                alert["geometry"] = {"type": "MultiPolygon", "coordinates": polygons}
+                alert["geometry_source"] = "NWS affected zones"
+
+    def list_counties(self, states):
+        response = self.session.get("https://api.weather.gov/zones/county",
+                                    params={"area": ",".join(states)}, timeout=20)
+        response.raise_for_status()
+        return sorted((f["properties"]["id"], f["properties"]["name"])
+                      for f in response.json()["features"])
+
+    def resolve_location(self, latitude, longitude):
+        response = self.session.get(f"https://api.weather.gov/points/{latitude:.4f},{longitude:.4f}", timeout=20)
+        response.raise_for_status()
+        props = response.json()["properties"]
+        return [props[key].rstrip("/").rsplit("/", 1)[-1]
+                for key in ("county", "forecastZone", "fireWeatherZone") if props.get(key)]
 
     def parse_alert(self, feature):
         props = feature.get("properties") or {}
@@ -105,6 +167,13 @@ class WeatherService:
             return None
 
         return {
+            "geometry": feature.get("geometry"),
+            "geocode": props.get("geocode") or {},
+            "zones": props.get("affectedZones") or [],
+            "references": props.get("references") or [],
+            "message_type": props.get("messageType") or "Alert",
+            "description": props.get("description") or "",
+            "ends": props.get("ends") or "",
             "id": alert_id,
             "event": event,
             "headline": props.get("headline") or event,
@@ -194,6 +263,19 @@ class WeatherService:
             alert["area"],
             alert["url"],
         )
+
+    def deliver_desktop(self, alert, kind="New", location=""):
+        """Raise synchronous submission failures so the delivery ledger can retry."""
+        notification.notify(title=f"{kind.upper()}: {alert['event']}"[:63],
+                            message=f"{location + ': ' if location else ''}{alert['area']}"[:255],
+                            app_name="Stormwatch", timeout=10)
+
+    def deliver_sound(self):
+        """Successful mixer submission is recorded separately from desktop delivery."""
+        if not pygame.mixer.get_init():
+            pygame.mixer.init()
+        pygame.mixer.music.load(str(self.base_dir / "alert.mp3"))
+        pygame.mixer.music.play()
 
     # ---------- Monitoring ----------
 
