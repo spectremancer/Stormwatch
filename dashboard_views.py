@@ -11,6 +11,7 @@ from TkFlow.widget import Widget
 from TkFlow._layout import _Layout
 from alert_history import instant
 from locations import rings
+from radar import Viewport
 
 BG, PANEL, TEXT, MUTED = "#0b1424", "#142238", "#e5edf8", "#9aaec7"
 
@@ -92,7 +93,7 @@ class Cards(Widget):
     def draw_page(self):
         start = self.page_index * 20
         rows = self.rows[start:start + 20]
-        signature = (self.page_index,len(self.rows),tuple((r["id"],r.get("version"),r["alert"],tuple(r.get("locations",()))) for r in rows))
+        signature = (self.page_index,len(self.rows),tuple((r["id"],r.get("version"),r["alert"],r.get('summary'),tuple(r.get("locations",()))) for r in rows))
         if signature == self._page_signature:
             return
         self._page_signature = signature
@@ -120,6 +121,9 @@ class Cards(Widget):
             area = tk.Label(card, text=alert["area"], wraplength=540, justify="left", bg=PANEL, fg=TEXT, anchor="w")
             area.pack(fill="x")
             card.bind("<Configure>", lambda e, label=area: label.configure(wraplength=max(180, e.width - 40)))
+            if row.get('summary'):
+                tk.Label(card, text='What changed: '+row['summary'], wraplength=540, justify='left',
+                         bg=PANEL, fg=TEXT, anchor='w').pack(fill='x', pady=5)
             label = tk.Label(card, text=countdown(alert), bg=PANEL, fg=color, anchor="w")
             label.pack(fill="x", pady=5)
             self.labels.append((label, alert))
@@ -128,6 +132,70 @@ class Cards(Widget):
     def tick(self):
         for label, alert in self.labels:
             label.configure(text=countdown(alert))
+
+
+def threat_priority(alert):
+    """Warning first, then official severity; earliest end breaks ties."""
+    end = instant(alert.get('ends') or alert.get('expires'))
+    return (int(alert['event'].endswith(' Warning')),
+            {'Extreme':4,'Severe':3,'Moderate':2,'Minor':1}.get(alert.get('severity'),0),
+            int(alert['event'].startswith(('Tornado','Hurricane'))),
+            -end.timestamp() if end else float('-inf'))
+
+
+class LocationOverview(Cards):
+    """Paginated personal threat overview; freshness never implies an all-clear."""
+    def __init__(self, parent, open_alert):
+        self.freshness = 'NO LIVE DATA'
+        self.health_labels = []
+        super().__init__(parent, open_alert)
+
+    def render_locations(self, profiles, rows):
+        self.render([dict(profile=p, matches=[r for r in rows if p.matches(r['alert'])]) for p in profiles])
+
+    def set_health(self, freshness):
+        if freshness != self.freshness:
+            self.freshness = freshness
+            for label in self.health_labels:
+                label.configure(text=freshness, fg='#7ce3bf' if freshness == 'LIVE' else '#ffbc87')
+
+    def draw_page(self):
+        start = self.page_index * 20
+        rows = self.rows[start:start+20]
+        signature = (self.page_index,len(self.rows),tuple((r['profile'].to_json(),
+                     tuple((a['id'],a.get('version'),a['alert']) for a in r['matches'])) for r in rows))
+        if signature == self._page_signature:
+            return
+        self._page_signature = signature
+        self.page_label.configure(text=f'{start+1 if rows else 0}–{start+len(rows)} of {len(self.rows)} locations')
+        self.previous.state(['disabled'] if start == 0 else ['!disabled'])
+        self.next.state(['disabled'] if start+20 >= len(self.rows) else ['!disabled'])
+        for child in self.body.winfo_children():
+            child.destroy()
+        self.labels, self.health_labels = [], []
+        for row in rows:
+            profile, matches = row['profile'], row['matches']
+            top = max((r['alert'] for r in matches), key=threat_priority, default=None)
+            color = '#ffbc87' if top and top['event'].endswith(' Warning') else '#85caff' if top else MUTED
+            card = tk.Frame(self.body, bg=PANEL, padx=16, pady=12, highlightthickness=1, highlightbackground='#243a56')
+            card.pack(fill='x', pady=(0,10))
+            for text, fg, bold in ((profile.name,TEXT,True),(profile.summary(),MUTED,False),
+                    ('Disabled' if not profile.enabled else 'No event types selected' if not profile.events else
+                     top['event'] if top else 'No selected active alerts',color,True),
+                    (f'{len(matches)} matching alerts · {len(profile.events)} selected event types',MUTED,False)):
+                tk.Label(card,text=text,bg=PANEL,fg=fg,anchor='w',wraplength=540,justify='left',
+                         font=(tkfont.nametofont('TkDefaultFont').actual('family'),11,'bold' if bold else 'normal')).pack(fill='x',pady=2)
+            if top:
+                label = tk.Label(card,text=countdown(top),bg=PANEL,fg=color,anchor='w')
+                label.pack(fill='x',pady=4)
+                self.labels.append((label,top))
+                ttk.Button(card,text='View highest-priority alert',command=lambda a=top:self.open_alert(a)).pack(anchor='w')
+            monitored = profile.enabled and bool(profile.events)
+            label = tk.Label(card,text=self.freshness if monitored else 'Monitoring disabled',bg=PANEL,
+                             fg=('#7ce3bf' if self.freshness == 'LIVE' else '#ffbc87') if monitored else MUTED,anchor='w')
+            label.pack(fill='x',pady=(6,0))
+            if monitored:
+                self.health_labels.append(label)
 
 
 class AlertMap(Widget):
@@ -155,6 +223,8 @@ class AlertMap(Widget):
         self.canvas.bind("<Button-4>", lambda e: self.zoom(1.25))
         self.canvas.bind("<Button-5>", lambda e: self.zoom(.8))
         self.items = {}
+        self.radar_photo = self.radar_view = None
+        self.on_view_changed = None
         with Path(__file__).with_name("data").joinpath("north_america.geojson").open() as source:
             self.land = json.load(source)["features"]
 
@@ -188,6 +258,22 @@ class AlertMap(Widget):
     def project(self, lon, lat):
         return (self.canvas.winfo_width() / 2 + (lon - self.center[0]) * self.scale,
                 self.canvas.winfo_height() / 2 - (lat - self.center[1]) * self.scale)
+
+    def viewport(self):
+        return Viewport(self.canvas.winfo_width(),self.canvas.winfo_height(),*self.center,self.scale)
+
+    def set_radar(self, image=None, view=None):
+        from PIL import ImageTk
+        self.radar_photo = ImageTk.PhotoImage(image,master=self.canvas) if image is not None else None
+        self.radar_view = view
+        self.paint_radar()
+
+    def paint_radar(self):
+        self.canvas.delete('radar')
+        if self.radar_photo is not None and self.radar_view == self.viewport():
+            self.canvas.create_image(0,0,image=self.radar_photo,anchor='nw',tags='radar')
+            self.canvas.tag_lower('radar')
+            self.canvas.tag_lower('land')
 
     def zoom(self, factor):
         self.scale = max(1, min(2000, self.scale * factor))
@@ -240,7 +326,8 @@ class AlertMap(Widget):
             for polygon in rings(feature["geometry"]):
                 coords = [value for lon, lat, *_ in polygon[0] for value in self.project(lon, lat)]
                 if len(coords) >= 6:
-                    c.create_polygon(coords, fill="#192c40", outline="#456079", width=1)
+                    c.create_polygon(coords, fill="#192c40", outline="#456079", width=1, tags='land')
+        self.paint_radar()
         for i in range(int(w / self.scale / step) + 2):
             lon = (math.floor(left / step) + i) * step
             x, _ = self.project(lon, 0)
@@ -280,3 +367,5 @@ class AlertMap(Widget):
         c.create_rectangle(0, 0, w, 48, fill="#101c30", outline="")
         c.create_text(14, 12, text="Confirm your location · Green: approximate pin · Gray: nearby places" if self.on_point else "SIMULATION · Sample boundaries · No real weather threat" if any(row["alert"].get("simulated") for row in self.rows) else "NWS boundaries · Orange: warning / Blue: watch · Green: saved location", fill=TEXT, anchor="w")
         c.create_text(14, 32, text="Drag to pan · Scroll to zoom · Click the map to move the pin" if self.on_point else f"Drag to pan · Scroll or use +/− to zoom · Click an outline for details · {missing} alerts have no polygon", fill=MUTED, anchor="w")
+        if self.on_view_changed:
+            self.on_view_changed()

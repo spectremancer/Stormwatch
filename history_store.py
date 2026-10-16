@@ -56,6 +56,8 @@ class HistoryArchive:
                 CREATE INDEX IF NOT EXISTS history_time ON history_events(recorded_at);
                 CREATE INDEX IF NOT EXISTS history_location_name ON history_locations(name);
             ''')
+            if 'summary' not in {row[1] for row in self.connection.execute('PRAGMA table_info(history_events)')}:
+                self.connection.execute("ALTER TABLE history_events ADD COLUMN summary TEXT NOT NULL DEFAULT ''")
             marker = self.connection.execute("SELECT data FROM settings WHERE name='archive_initialized'").fetchone()
             if not marker:
                 for row in self.connection.execute('SELECT * FROM versions').fetchall():
@@ -74,7 +76,7 @@ class HistoryArchive:
                                         'Issued (imported)' if stamp else 'Unknown (imported)')
                 self.connection.execute("INSERT OR REPLACE INTO settings VALUES ('archive_initialized','true')")
 
-    def _archive_event(self, alert, version, kind, locations=None, stamp=None, basis='Observed'):
+    def _archive_event(self, alert, version, kind, locations=None, stamp=None, basis='Observed', summary=''):
         if stamp is None:
             stamp = datetime.now(timezone.utc).isoformat()
         existing = self.connection.execute('SELECT sequence FROM history_events WHERE id=? AND version=? AND kind=?',
@@ -83,9 +85,9 @@ class HistoryArchive:
             sequence = existing[0]
         else:
             cursor = self.connection.execute('''INSERT INTO history_events
-                (id,version,kind,recorded_at,time_basis,data,search_text,event) VALUES (?,?,?,?,?,?,?,?)''',
+                (id,version,kind,recorded_at,time_basis,data,search_text,event,summary) VALUES (?,?,?,?,?,?,?,?,?)''',
                 (alert['id'], version, kind, stamp, basis, json.dumps(alert),
-                 ' '.join(str(alert.get(k,'')) for k in ('event','headline','area','description','instruction')).casefold(), alert['event']))
+                 ' '.join(str(alert.get(k,'')) for k in ('event','headline','area','description','instruction')).casefold(), alert['event'], summary))
             sequence = cursor.lastrowid
         if locations is None:
             inherited = self.connection.execute('''SELECT h.profile,h.name FROM history_locations h
@@ -176,7 +178,7 @@ class HistoryArchive:
                 temporary = Path(output.name)
                 writer = csv.writer(output)
                 writer.writerow(('alert_id','version','change','recorded_at_utc','time_basis','event','locations','area',
-                                 'severity','issued_at','expires_at','current_status','channel_results','headline','instruction','url'))
+                                 'severity','issued_at','expires_at','current_status','channel_results','headline','instruction','url','change_summary'))
                 while True:
                     rows = cursor.fetchmany(250)
                     if not rows:
@@ -185,7 +187,7 @@ class HistoryArchive:
                         a = json.loads(row['data'])
                         writer.writerow(csv_cell(v) for v in (row['id'],row['version'],row['kind'],row['recorded_at'],
                             row['time_basis'],a['event'],row['locations'],a.get('area'),a.get('severity'),a.get('sent'),
-                            a.get('ends') or a.get('expires'),row['current_status'],row['outcomes'],a.get('headline'),a.get('instruction'),a.get('url')))
+                            a.get('ends') or a.get('expires'),row['current_status'],row['outcomes'],a.get('headline'),a.get('instruction'),a.get('url'),row['summary']))
                         count += 1
             os.replace(temporary, target)
             return count

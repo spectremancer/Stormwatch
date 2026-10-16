@@ -14,15 +14,16 @@ import pygame
 
 from TkFlow import App, Button, Checkbox, Dropdown, Form, Label, TextArea, Window
 from WeatherService import WeatherService
-from alert_history import AlertHistory, instant
-from dashboard_views import AlertMap, Cards, Tabs
-from desktop import Tray, set_login
+from alert_history import AlertHistory, instant, reference_ids
+from dashboard_views import AlertMap, Cards, Tabs, LocationOverview
+from desktop import Tray, set_login, configure_identity
 from location_wizard import LocationWizard
 from delivery_panel import DeliveryPanel
 from demo import DemoPanel
 from locations import LocationProfile
 from notification_rules import add_rule_fields, rule_values
 from history_panel import HistoryPanel
+from radar_panel import RadarPanel
 
 EVENT_FAMILIES = (
     "Tornado", "Severe Thunderstorm", "Hurricane", "Tropical Storm",
@@ -45,6 +46,7 @@ class StormwatchApp:
         self.profile = self.profiles[0]
         self.app = App("Stormwatch · Weather intelligence", width=1260, height=900,
                        min_width=1000, min_height=760, padding=20, spacing=12, theme="clam")
+        configure_identity(self.app.root)
         self.snapshot = {}
         self.initialized = False
         self.running = self.busy = False
@@ -106,6 +108,11 @@ class StormwatchApp:
         content = body.column(padding=0, expand=True, fill="both", spacing=8)
         self.health = Label(content, "NO LIVE DATA • Start monitoring", style="Health.TLabel", wraplength=780)
         self.tabs = Tabs(content)
+        overview_page = self.tabs.page('Locations')
+        Label(overview_page, 'Your locations at a glance', style='Heading.TLabel')
+        Label(overview_page, 'Selected alert types only · Highest-priority alert shown for each saved location',
+              style='Muted.TLabel', wraplength=740)
+        self.overview = LocationOverview(overview_page, self.open_alert)
         active = self.tabs.page("Active alerts")
         self.active_count = Label(active, "Current alerts for enabled locations", style="Heading.TLabel")
         self.cards = Cards(active, self.open_alert)
@@ -123,14 +130,15 @@ class StormwatchApp:
             self.feed.text.tag_configure(tag, foreground=color, font=(self.font_family, size), spacing1=5, spacing3=6)
         map_page = self.tabs.page("Alert map")
         tools = map_page.row(padding=0)
-        Label(tools, "Affected areas & saved locations", style="Heading.TLabel", expand=True)
+        Label(tools, "Affected areas & saved locations", style="Heading.TLabel", expand=True,wraplength=180)
         Button(tools, "+", lambda: self.map.zoom(1.5))
         Button(tools, "−", lambda: self.map.zoom(1 / 1.5))
         Button(tools, "Fit", lambda: self.map.fit())
         self.map = AlertMap(map_page, self.open_alert)
-        Label(map_page, "Offline map · Storm polygons or NWS affected-zone outlines; missing boundaries remain in Active alerts.\n"
-              "Coordinate matching uses the polygon when available, otherwise the resolved NWS county/forecast zones.",
-              style="Muted.TLabel", wraplength=740)
+        self.radar = RadarPanel(map_page,self.map)
+        map_note = Label(map_page, "NWS polygons and zone outlines; alerts without boundaries remain in Active alerts.\n"
+              "Pin matching: storm polygon, or resolved NWS zones.", style="Muted.TLabel", wraplength=500)
+        map_note.widget.bind('<Configure>',lambda e:map_note.configure(wraplength=max(200,e.width)))
         delivery_page = self.tabs.page("Delivery")
         self.delivery_panel = DeliveryPanel(delivery_page, self.history, self.retry_delivery, lambda: self.running)
         history_page = self.tabs.page("History")
@@ -384,7 +392,10 @@ class StormwatchApp:
         if not warning:
             self.cancel_since = datetime.now(timezone.utc)
         try:
-            known = self.history.known_ids(current)
+            candidates = set(current)
+            for alert in current.values():
+                candidates.update(reference_ids(alert))
+            known = self.history.known_ids(candidates)
         except sqlite3.Error as error:
             self.failed(generation, RuntimeError(f"Could not read alert history: {error}"))
             return
@@ -407,11 +418,18 @@ class StormwatchApp:
                     self.add_event(alert["event"])
                     matched = [p for p in self.profiles if p.matches(alert)]
                     existing = alert["id"] in existing_ids
-                    if not matched and not existing:
+                    prior_matches = []
+                    relevant_references = [ref for ref in reference_ids(alert) if ref in existing_ids]
+                    if not matched:
+                        for prior_id in ([alert['id']] if existing else []) + relevant_references:
+                            previous = self.history.get_alert(prior_id)
+                            if previous:
+                                prior_matches.extend(p for p in self.profiles if p.matches(previous['alert']) and p not in prior_matches)
+                    if not matched and not existing and not relevant_references:
                         continue
-                    version, kind, legacy = self.history.observe(alert, locations=matched)
-                    if matched and not self.history.displayed(alert["id"], version):
-                        messages.append((alert,kind,[p.name for p in matched]))
+                    version, kind, legacy = self.history.observe(alert, locations=matched or prior_matches)
+                    if (matched or prior_matches) and not self.history.displayed(alert["id"], version):
+                        messages.append((alert,kind,[p.name for p in matched] or [p.name+' (previously affected)' for p in prior_matches]))
                         self.history.mark_displayed(alert["id"], version)
                     if alert.get("message_type") == "Cancel":
                         for previous, status in self.history.cancel_references(alert):
@@ -558,6 +576,7 @@ class StormwatchApp:
         self.snapshot = {row["id"]: row["alert"] for row in rows}
         self.active_count.set(f"{len(rows)} active alerts · {sum(p.enabled for p in self.profiles)} enabled locations")
         self.cards.render(rows)
+        self.overview.render_locations(self.profiles, rows)
         self.map.render(rows, self.profiles)
         if hasattr(self, "history_panel"):
             self.refresh_records()
@@ -582,13 +601,16 @@ class StormwatchApp:
         if self.coverage_warning:
             message += " • Cancellation coverage incomplete"
         self.health.set(message)
+        self.overview.set_health('NO LIVE DATA' if self.last_success is None else 'STALE · Last known alerts' if stale else 'LIVE')
         self.health.configure(foreground="#ffbc87" if stale or self.coverage_warning else "#7ce3bf")
 
     def tick(self):
         if self.app._closed:
             return
         self.cards.tick()
+        self.overview.tick()
         self.demo.tick()
+        self.radar.tick()
         self.update_health()
         # An elapsed expiration can be determined locally, even while offline.
         changes = self.history.reconcile()
@@ -613,19 +635,22 @@ class StormwatchApp:
             return value if len(value) <= limit else value[:limit] + "… [Full text in alert details]"
         for alert, kind, locations in messages:
             tag = "warning" if alert["event"].endswith("Warning") else "watch"
+            summary = self.history.change_summary(alert, kind)
             segments.extend([
                 (f"{kind.upper()}  ·  {alert['event']}\n",tag),
                 (f"{datetime.now():%b %d · %H:%M:%S}  •  {alert['severity']}  •  {', '.join(locations)}\n","meta"),
+                (f"What changed: {summary}\n" if summary else '', 'body'),
                 (f"{excerpt(alert['headline'],2000)}\n\n{excerpt(alert['area'],4000)}\n\n{excerpt(alert['instruction'],8000)}\n","body"),
                 (f"Expires: {alert['expires']}\n{alert['url']}\n\n{'─' * 45}\n\n","meta")])
         self.feed.append_segments(segments)
 
-    def open_alert(self, alert):
+    def open_alert(self, alert, summary=None):
         title = ("SIMULATION · " if alert.get("simulated") else "") + alert["event"]
         window = Window(self.app, title, width=740, height=630)
         Label(window, title, style="Heading.TLabel")
         details = TextArea(window, readonly=True, expand=True, fill="both", bg="#101c30", fg="#e5edf8", padx=16, pady=12)
-        details.set(f"{alert['headline']}\n\n{alert['area']}\n\nSeverity: {alert['severity']}\nIssued: {alert['sent']}\n"
+        summary = self.history.change_summary(alert) if summary is None else summary
+        details.set((f'What changed: {summary}\n\n' if summary else '') + f"{alert['headline']}\n\n{alert['area']}\n\nSeverity: {alert['severity']}\nIssued: {alert['sent']}\n"
                     f"Expires: {alert['expires']}\n\n{alert.get('description', '')}\n\n{alert['instruction']}")
         from urllib.parse import urlparse
         if urlparse(alert["url"]).scheme == "https":
@@ -705,6 +730,8 @@ class StormwatchApp:
             if timer is not None:
                 self.app.root.after_cancel(timer)
         self.tray.stop()
+        self.radar.close()
+        self.app.root._stormwatch_icons.clear()
         self.app.close()
         self.cleanup_thread = threading.Thread(target=self.cleanup, daemon=True)
         self.cleanup_thread.start()

@@ -10,6 +10,7 @@ import threading
 
 from locations import LocationProfile
 from history_store import HistoryArchive
+from alert_changes import summarize_change
 
 
 def instant(value):
@@ -26,6 +27,11 @@ def version_of(alert):
     payload = {key: alert.get(key) for key in fields}
     payload["geometry"] = alert.get("geometry") if alert.get("geometry_source") != "NWS affected zones" else None
     return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
+
+
+def reference_ids(alert):
+    return [ref.get('identifier') or ref.get('id') if isinstance(ref,dict) else ref
+            for ref in alert.get('references',[]) if ref]
 
 
 class AlertHistory(HistoryArchive):
@@ -64,6 +70,8 @@ class AlertHistory(HistoryArchive):
                 self.connection.execute("UPDATE alerts SET expires_at=? WHERE id=?", (end.isoformat() if end else "", row["id"]))
         self.connection.execute("CREATE INDEX IF NOT EXISTS active_alert_expiry ON alerts(status,expires_at)")
         self.connection.execute("CREATE INDEX IF NOT EXISTS active_alert_updated ON alerts(status,updated DESC)")
+        if 'summary' not in {row[1] for row in self.connection.execute('PRAGMA table_info(versions)')}:
+            self.connection.execute("ALTER TABLE versions ADD COLUMN summary TEXT NOT NULL DEFAULT ''")
         columns = {row[1] for row in self.connection.execute("PRAGMA table_info(deliveries)")}
         for name in ("scheduled_at", "last_attempt", "reason"):
             if name not in columns:
@@ -154,11 +162,12 @@ class AlertHistory(HistoryArchive):
             cancelled = alert.get("message_type", "").lower() == "cancel"
             status = "Cancelled" if cancelled else "Expired" if end and end <= now else "Active"
             if old and old["version"] == version:
-                kind = self.connection.execute("SELECT kind FROM versions WHERE id=? AND version=?", (alert["id"],version)).fetchone()[0]
+                prior_version = self.connection.execute("SELECT kind,summary FROM versions WHERE id=? AND version=?", (alert["id"],version)).fetchone()
+                kind = prior_version['kind']
                 if old["data"] != data or old["status"] != status:
                     self.connection.execute("UPDATE alerts SET data=?,status=?,updated=?,expires_at=? WHERE id=?",
                         (data,status,now.isoformat(),end.isoformat() if end else "",alert["id"]))
-                self._archive_event(alert, version, kind, locations)
+                self._archive_event(alert, version, kind, locations, summary=prior_version['summary'])
                 return version, kind, False
             previous = old or reference_old
             kind = "New" if previous is None else "Updated"
@@ -171,12 +180,14 @@ class AlertHistory(HistoryArchive):
                 kind = "Cancelled"
             elif status == "Expired":
                 kind = "Expired"
+            summary = summarize_change(json.loads(previous['data']) if previous else None, alert, kind)
             self.connection.execute("INSERT OR REPLACE INTO alerts (id,version,data,status,updated,expires_at) VALUES (?, ?, ?, ?, ?, ?)",
                                     (alert["id"], version, data, status, now.isoformat(), end.isoformat() if end else ""))
-            self.connection.execute("INSERT OR IGNORE INTO versions (id, version, kind, data) VALUES (?, ?, ?, ?)",
-                                    (alert["id"], version, kind, data))
-            kind = self.connection.execute("SELECT kind FROM versions WHERE id=? AND version=?", (alert["id"], version)).fetchone()[0]
-            self._archive_event(alert, version, kind, locations, now.astimezone(timezone.utc).isoformat())
+            self.connection.execute("INSERT OR IGNORE INTO versions (id, version, kind, data, summary) VALUES (?, ?, ?, ?, ?)",
+                                    (alert["id"], version, kind, data, summary))
+            stored = self.connection.execute("SELECT kind,summary FROM versions WHERE id=? AND version=?", (alert["id"], version)).fetchone()
+            kind = stored['kind']
+            self._archive_event(alert, version, kind, locations, now.astimezone(timezone.utc).isoformat(), summary=stored['summary'])
             # Migrate ID-only history as a quiet baseline. Later versions notify.
             legacy = old is None and self.connection.execute("SELECT 1 FROM processed_alerts WHERE id=?", (alert["id"],)).fetchone()
             if legacy:
@@ -186,6 +197,14 @@ class AlertHistory(HistoryArchive):
     def displayed(self, alert_id, version):
         with self.lock:
             return bool(self.connection.execute("SELECT displayed FROM versions WHERE id=? AND version=?", (alert_id, version)).fetchone()[0])
+
+    def change_summary(self, alert, kind=None):
+        if kind in ('Cancelled', 'Expired', 'No longer active'):
+            return summarize_change(None, alert, kind)
+        with self.lock:
+            row = self.connection.execute('SELECT summary FROM versions WHERE id=? AND version=?',
+                                          (alert['id'],version_of(alert))).fetchone()
+            return row['summary'] if row else ''
 
     def mark_displayed(self, alert_id, version):
         with self.transaction():
@@ -292,7 +311,7 @@ class AlertHistory(HistoryArchive):
 
     def rows(self, active_only=False):
         with self.lock:
-            sql = "SELECT * FROM alerts" + (" WHERE status='Active'" if active_only else "") + " ORDER BY updated DESC"
+            sql = "SELECT alerts.*, (SELECT summary FROM versions v WHERE v.id=alerts.id AND v.version=alerts.version) AS summary FROM alerts" + (" WHERE status='Active'" if active_only else "") + " ORDER BY updated DESC"
             return [dict(row, alert=json.loads(row["data"])) for row in self.connection.execute(sql)]
 
     def reconcile(self, current_ids=None, now=None):
@@ -314,7 +333,7 @@ class AlertHistory(HistoryArchive):
                 row = self.connection.execute("SELECT version,data FROM alerts WHERE id=?", (alert_id,)).fetchone()
                 alert = json.loads(row["data"])
                 self.connection.execute("UPDATE alerts SET status=? WHERE id=?", (status,alert_id))
-                self._archive_event(alert,row["version"],status,stamp=stamp)
+                self._archive_event(alert,row["version"],status,stamp=stamp,summary=summarize_change(None,alert,status))
                 changes.append((alert,status))
         return changes
 
@@ -326,7 +345,7 @@ class AlertHistory(HistoryArchive):
                 row = self.connection.execute("SELECT data,version FROM alerts WHERE id=? AND status='Active'", (alert_id,)).fetchone()
                 if row:
                     self.connection.execute("UPDATE alerts SET status='Cancelled' WHERE id=?", (alert_id,))
-                    self._archive_event(json.loads(row["data"]), row["version"], "Cancelled")
+                    self._archive_event(json.loads(row["data"]), row["version"], "Cancelled", summary=summarize_change(None,alert,'Cancelled'))
                     changed.append((json.loads(row[0]), "Cancelled"))
         return changed
 

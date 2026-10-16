@@ -5,6 +5,27 @@ import sys
 import threading
 
 
+def configure_identity(root):
+    """Apply the project icon to Tk windows and a separate Windows taskbar group."""
+    import tkinter as tk
+    from PIL import Image, ImageTk
+    path = Path(__file__).with_name('icon.ico')
+    if sys.platform == 'win32':
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('Stormwatch.WeatherIntelligence')
+    with Image.open(path) as source:
+        images = [ImageTk.PhotoImage(source.convert('RGBA').resize((size,size)), master=root)
+                  for size in (16,32,48,64)]
+    root.iconphoto(True, *images)
+    # Keep Tk image objects alive; default applies to child windows too.
+    root._stormwatch_icons = images
+    if sys.platform == 'win32':
+        try:
+            root.iconbitmap(default=str(path))
+        except tk.TclError:
+            pass  # iconphoto still supplies the small and large window icons.
+
+
 def set_login(enabled):
     if sys.platform != "win32":
         raise RuntimeError("Launch at login is currently supported on Windows only.")
@@ -44,10 +65,9 @@ class Tray:
                 raise RuntimeError("Background tray mode currently targets Windows and Linux.")
             if not pystray.Icon.HAS_MENU:
                 raise RuntimeError("This desktop tray backend has no menu support. Use a menu-capable tray backend.")
-            from PIL import Image, ImageDraw
-            image = Image.new("RGBA", (64, 64), "#0b1424")
-            draw = ImageDraw.Draw(image)
-            draw.polygon([(36, 4), (12, 36), (29, 36), (24, 60), (53, 24), (35, 24)], fill="#85caff")
+            from PIL import Image
+            with Image.open(Path(__file__).with_name('icon.ico')) as source:
+                image = source.convert('RGBA').resize((64,64))
             self.icon = pystray.Icon("Stormwatch", image, "Stormwatch monitoring", pystray.Menu(
                 pystray.MenuItem("Open Stormwatch", lambda *_: self.app.call_soon(self.show), default=True),
                 pystray.MenuItem("Quit", lambda *_: self.app.call_soon(self.quit))))

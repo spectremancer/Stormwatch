@@ -141,13 +141,14 @@ class HistoryPanel:
         self.open_button.enable()
         a = row['alert']
         self.details.set(f"{row['kind']} · {a['event']} · {row['locations'] or 'Location not recorded'}\n"
+            f"What changed: {row['summary'] or 'Change summary unavailable for this older record.'}\n"
             f"{a.get('headline','')}\n{a.get('area','')}\n"
             f"Time basis: {row['time_basis']} · Current alert status: {row['current_status'] or 'Unknown'}\n"
             f"{outcome_label(row['outcomes'])}\n{a.get('instruction','')}")
 
     def open_selected(self):
         if self.current():
-            self.owner.open_alert(self.current()['alert'])
+            self.owner.open_alert(self.current()['alert'], self.current()['summary'])
 
     def export(self):
         if self.exporting:

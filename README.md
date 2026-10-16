@@ -18,6 +18,21 @@ The interface needs a desktop display; audible alerts need an audio device.
 Linux may require `python3-tk` and desktop notification tools such as
 `libnotify-bin`/`python3-dbus`. The system tray uses pystray and Pillow.
 
+The project-root `icon.ico` supplies the title-bar, Windows taskbar, child-window,
+and tray icons. Windows uses a Stormwatch-specific taskbar application identity.
+Asset paths are resolved relative to the application, including frozen builds.
+To build the Windows executable **on Windows**:
+
+```sh
+python -m pip install pyinstaller
+python -m PyInstaller --clean main.spec
+```
+
+The spec embeds `icon.ico` and bundles the icon, sound, and data directory. The
+checked-in `dist/main.exe` is an older build; source changes require rebuilding
+it with the command above. This release's Windows executable was not built on
+the Linux development machine.
+
 ## Saved locations
 
 Use **Add** for a three-step guided setup:
@@ -108,8 +123,70 @@ used where available; otherwise official affected-zone boundaries are retrieved
 and cached, with at most six new lookups per refresh. Zone outlines are broader
 coverage boundaries, not precise storm paths. Incomplete/missing geometry is
 counted on the map; those alerts remain in the cards. The map requires no map
-API key, remote tiles, or additional network domains. It is not radar or storm
-tracking. Dataset attribution is in [data/README.md](data/README.md).
+API key. Its geographic context works offline. Dataset attribution is in
+[data/README.md](data/README.md).
+
+### Personal threat overview
+
+The **Locations** tab shows all saved locations, with 20 cards per page. Each
+card shows its geographic filter, selected alert count, monitoring status, and
+highest-priority matching alert with an expiration countdown and details button.
+Warnings rank before watches, then by official severity; tornado/hurricane events
+and earlier expirations break ties. Disabled locations are clearly labeled.
+**NO LIVE DATA** and **STALE** remain visible until monitoring has a recent
+successful refresh. “No selected active alerts” applies only to the location's
+selected event types and does not establish an all-clear for other hazards.
+
+### What changed?
+
+New alert versions receive factual change summaries in the feed, active cards,
+details, history, and the CSV `change_summary` column. Summaries identify extension
+or shortening minutes, severity/event changes, added or removed NWS county/zone
+codes, and changes to official instructions, headlines, descriptions, or native
+boundaries. They compare the previous version or an explicitly referenced prior
+alert; they do not infer storm movement or write new safety advice.
+
+If an update removes a formerly matching location, that update still appears in
+the feed with the location marked **previously affected**, including replacement
+alert IDs. Current cards reflect the changed coverage. Explicit cancellations,
+elapsed expirations, and unconfirmed disappearance remain distinct. Summaries
+are saved per version and historical change; older records without a summary
+remain readable and are not assigned an invented comparison.
+
+### Radar playback
+
+In **Alert map**, enable **Show recent radar**. This opt-in overlay uses
+[RainViewer](https://www.rainviewer.com) observed precipitation imagery under
+the NWS alert boundaries and saved-location markers. Use **Play/Pause**,
+**Previous frame**, **Next frame**, and **Refresh radar**. The latest six available
+observed frames are loaded; no forecast radar frames are used. Each displayed
+frame shows its observation date/time in UTC, age, and sequence number. Blue/green
+through yellow/red indicates increasing precipitation intensity, not warning
+severity. Radar coverage can be incomplete; a blank area does not prove safety.
+
+Radar refreshes every five minutes while enabled and the map is visible. A
+failed refresh retains the last successful imagery with its original timestamp
+and marks it stale; imagery is also marked stale when the newest observation is
+over 20 minutes old. Panning, zooming, or resizing hides the old overlay while
+the new view loads, so imagery cannot remain attached to the wrong coordinates.
+Playback pauses when leaving the map. Disabling radar clears the overlay and
+frame images. Radar operational status never enters the alert-only chat feed.
+
+Network requests and reprojection run outside the GUI thread. Loads use at most
+six frames, 12 tiles per frame, four concurrent tile requests, and a 96-tile
+in-memory cache. Resolution is capped at provider zoom 7; large viewports may use
+lower resolution. Web Mercator tiles are reprojected onto the map's geographic
+grid. There is no persistent radar archive or storm-arrival prediction. Alert
+monitoring and the offline map continue if radar is unavailable.
+
+Radar needs HTTPS access to `api.rainviewer.com` and `tilecache.rainviewer.com`.
+No API key is required by this integration; availability and usage remain
+subject to the provider's service and terms. RainViewer attribution links from
+the map. In the managed cloud environment, these domains have been saved in a
+network configuration draft; review/save and publish that configuration to
+enable live radar checks. Live provider access was blocked during development;
+rendering, projection, caching, playback, and failures were validated with
+controlled fixtures rather than live imagery.
 
 ## Versions and delivery receipts
 
@@ -246,8 +323,9 @@ intervals old (minimum two minutes). A failed active request preserves the last
 known cards rather than interpreting missing data as cancellations. Cancellation
 coverage warnings are displayed separately. Refresh interval: 60 seconds.
 
-Network access is required only to `api.weather.gov` for alert, cancellation,
-county, point-resolution, and boundary requests. This is an informational
+Alert monitoring uses `api.weather.gov` for alert, cancellation,
+county, point-resolution, and boundary requests. Optional radar uses the two
+RainViewer domains listed above. This is an informational
 monitor; follow official local weather guidance.
 
 ## Responsiveness and input readability
@@ -275,9 +353,9 @@ python scripts/benchmark_processing.py --incoming 1000 --stored 10000 --passes 3
 
 This uses a temporary database and sends no real notifications. In a Linux virtual
 display check, the original 1,000-alert snapshot blocked processing for about 4.7
-seconds. After these changes, the same-sized snapshot completed in about 0.26
+seconds. With the location overview and summaries, the same-sized snapshot completed in about 0.49
 seconds, yielding between batches, with a maximum measured UI heartbeat gap of
-33 ms. Ten idle health ticks took about 1 ms. Timings vary with hardware, alert
+73 ms. Ten idle health ticks took about 2 ms. Timings vary with hardware, alert
 content, and platform; Windows performance has not been measured here.
 
 ## Validation
@@ -294,7 +372,8 @@ pagination, map interaction, tray failure handling, guided location setup,
 delivery-panel retries, simulation isolation, shared overlap submissions,
 watch/warning rules, history filters, full snapshot CSV export, editable-field
 contrast, large batches, transaction rollback, idle expiry lookups, and redraw
-reuse. Windows Run-entry and
+reuse, change summaries, removed-location updates, location threat ranking,
+radar projection, caching, playback, stale imagery, and icon setup. Windows Run-entry and
 notification submission paths are mocked on Linux; actual Windows tray/toast
 behavior still needs verification on Windows.
 
