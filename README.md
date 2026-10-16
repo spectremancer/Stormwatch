@@ -93,6 +93,30 @@ retain their previous behavior until edited. Rules apply on the next refresh;
 turning a channel off also prevents its queued or failed submissions from retrying.
 Cancellations and expired versions remain silent regardless of warning rules.
 
+### Choose which events play alert.mp3
+
+Select a location in the sidebar, then choose **Sound events…**. To play sound
+only for tornado and hurricane events, choose **Tornado + hurricane**, then
+**Save sound events**. This selects Tornado Warning, Tornado Watch, Hurricane
+Warning, and Hurricane Watch. You can instead uncheck **Allow sound for all
+monitored event types** and choose individual event names, such as Tornado Warning
+without Tornado Watch. **No event sounds** silences automatic sounds for that
+location. **All event types** follows all monitored types, including future
+selections.
+
+The location's Sound switch and watch/warning sound rules must also allow an
+event. The event must match an enabled location and be selected for monitoring.
+Sound filtering does not remove alerts from the feed, cards, history, or desktop
+notifications. With overlapping locations, an event may still play once if any
+matching location allows it; each location has its own sound choices. Preferences
+persist across restarts and apply on the next refresh. Pending and manual retries
+also check the current sound filter. Existing profiles keep their previous sound
+behavior until a filter is saved.
+
+**Test alert sound** is an explicit manual preview and still plays on request,
+even when all automatic event sounds are disabled. Previewing Demo sounds is
+also separate from live location preferences.
+
 ## Active alerts, lifecycle, and map
 
 **Active alerts** shows current matched alerts as cards with profile names,
@@ -187,6 +211,31 @@ network configuration draft; review/save and publish that configuration to
 enable live radar checks. Live provider access was blocked during development;
 rendering, projection, caching, playback, and failures were validated with
 controlled fixtures rather than live imagery.
+
+**Connection details** shows the last attempt and the full failure reason. The
+status under the map also reports the reason instead of only “Radar unavailable”:
+
+| Reported failure | Meaning and action |
+| --- | --- |
+| Proxy CONNECT HTTP 403 | The configured proxy blocked the host before contacting RainViewer. Allow both radar hosts in the network policy. In the managed cloud environment, review/save and publish the saved network additions. |
+| Host returned HTTP 401/403 | The request reached an HTTP service that denied access. Check provider access rules or firewall filtering. |
+| HTTP 429 | Provider rate limit; wait a few minutes before retrying. |
+| TLS certificate validation failed | Check the system clock and trusted certificates. TLS verification stays enabled. |
+| Timed out / could not connect | Check internet access, DNS, firewall, and system proxy settings. |
+| No recent observations | Check the system clock or provider availability. |
+| Map too large | Resize the map to at most 1800 × 1200 pixels, then retry. |
+
+Supported HTTPS redirects between the two trusted RainViewer hosts are followed,
+up to a bounded limit. Other redirect hosts, oversized responses, and invalid
+images/metadata are rejected with explanations. Raw proxy credentials and server
+response bodies are not included in connection diagnostics.
+
+Live checks in the managed cloud environment returned proxy CONNECT 403 for
+**both** RainViewer hosts while the active allowlist contained only weather.gov.
+This establishes a cloud network-policy blocker, not a RainViewer outage or the
+cause of a failure on another Windows machine. On Windows, use **Connection
+details** for the local reason. If running the checked-in executable, rebuild it
+from current source using `main.spec` to get these controls and diagnostics.
 
 ## Versions and delivery receipts
 
@@ -373,9 +422,10 @@ delivery-panel retries, simulation isolation, shared overlap submissions,
 watch/warning rules, history filters, full snapshot CSV export, editable-field
 contrast, large batches, transaction rollback, idle expiry lookups, and redraw
 reuse, change summaries, removed-location updates, location threat ranking,
-radar projection, caching, playback, stale imagery, and icon setup. Windows Run-entry and
+radar projection, caching, playback, stale imagery, icon setup, event-specific
+sound filters, and safe connection diagnostics/redirect handling. Windows Run-entry and
 notification submission paths are mocked on Linux; actual Windows tray/toast
 behavior still needs verification on Windows.
 
-Forecasts, text-to-speech, and individual event/severity-level rule editors
-are not part of this release.
+Forecasts, text-to-speech, severity-specific rules, and individual-event desktop
+notification rule editors are not part of this release.

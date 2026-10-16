@@ -24,6 +24,7 @@ from locations import LocationProfile
 from notification_rules import add_rule_fields, rule_values
 from history_panel import HistoryPanel
 from radar_panel import RadarPanel
+from sound_preferences import SoundPreferences
 
 EVENT_FAMILIES = (
     "Tornado", "Severe Thunderstorm", "Hurricane", "Tropical Storm",
@@ -100,7 +101,10 @@ class StormwatchApp:
         self.selection = Label(controls, "", style="Muted.TLabel")
         self.update_selection(save=False)
         self.toggle = Button(controls, "Start monitoring", self.toggle_monitoring, style="Primary.TButton")
-        self.sound_button = Button(controls, "▶  Test alert sound", self.test_sound)
+        audio = controls.row(padding=0)
+        Button(audio,'Sound events…',self.edit_sound_events)
+        self.sound_button = Button(audio, "▶  Test alert sound", self.test_sound)
+        self.sound_preferences = None
         self.tray_mode = Checkbox(controls, "Close window to tray",
                                   value=self.history.setting("close_to_tray", False), command=self.set_tray_mode)
         self.login = Checkbox(controls, "Launch at login (Windows)",
@@ -232,6 +236,11 @@ class StormwatchApp:
         else:
             self.location_wizard = LocationWizard(self)
 
+    def edit_sound_events(self):
+        if self.sound_preferences and not self.sound_preferences.window._closed:
+            self.sound_preferences.window.close()
+        self.sound_preferences = SoundPreferences(self)
+
     def edit_profile(self, new=False):
         profile = LocationProfile(name="New location") if new else replace(self.profile)
         window = Window(self.app, "Add location" if new else "Edit location", width=570, height=730)
@@ -270,6 +279,7 @@ class StormwatchApp:
                                     latitude=float(values["lat"]) if values["lat"].strip() else None,
                                     longitude=float(values["lon"]) if values["lon"].strip() else None,
                                     enabled=values["enabled"], sound=values["sound"], desktop=values["desktop"],
+                                    sound_events=next((p.sound_events for p in self.profiles if p.id == profile.id),profile.sound_events),
                                     **rule_values(values)).validate()
                 if any(p.name == candidate.name and p.id != candidate.id for p in self.profiles):
                     raise ValueError("A location with this name already exists.")

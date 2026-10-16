@@ -11,6 +11,7 @@ from io import BytesIO
 import math
 import re
 import threading
+from urllib.parse import urljoin, urlparse
 
 from PIL import Image, ImageDraw
 import requests
@@ -19,6 +20,31 @@ METADATA_URL = 'https://api.rainviewer.com/public/weather-maps.json'
 TILE_HOST = 'https://tilecache.rainviewer.com'
 MAX_FRAMES, MAX_TILES, CACHE_TILES = 6, 12, 96
 HEADERS = {'User-Agent': 'Stormwatch/1.0', 'Accept': 'application/json,image/png'}
+
+
+class RadarError(ValueError):
+    """Safe, actionable diagnostics; excludes response bodies and proxy credentials."""
+
+
+def connection_error(error, host):
+    if isinstance(error,requests.exceptions.ProxyError):
+        if '403' in str(error):
+            return RadarError(f'Proxy refused HTTPS access to {host} (CONNECT HTTP 403). '
+                              'Allow this host in the network policy or ask your proxy administrator.')
+        return RadarError(f'Proxy connection failed for {host}. Check your system proxy settings.')
+    if isinstance(error,requests.exceptions.SSLError):
+        return RadarError(f'TLS certificate validation failed for {host}. Check the system clock and trusted certificates.')
+    if isinstance(error,requests.exceptions.Timeout):
+        return RadarError(f'The request to {host} timed out. Check the connection and try Refresh radar.')
+    return RadarError(f'Could not connect to {host}. Check DNS, firewall, and internet access, then try Refresh radar.')
+
+
+def error_description(error):
+    if isinstance(error,RadarError):
+        return str(error)
+    if isinstance(error,ValueError):
+        return str(error)
+    return 'Radar could not be loaded. Try Refresh radar; verify access to api.rainviewer.com and tilecache.rainviewer.com.'
 
 
 @dataclass(frozen=True)
@@ -59,35 +85,58 @@ def tile_layout(view):
 def parse_frames(payload, now=None):
     """Accept only provider past-frame paths, bounded and ordered by observation."""
     now = now or datetime.now(timezone.utc).timestamp()
-    if payload.get('host') != TILE_HOST:
-        raise ValueError('Unexpected radar tile host.')
+    if not isinstance(payload,dict) or str(payload.get('host','')).rstrip('/') != TILE_HOST:
+        raise RadarError('The radar provider advertised an unsupported tile host. The provider response may have changed; update Stormwatch.')
+    radar = payload.get('radar')
+    if not isinstance(radar,dict) or not isinstance(radar.get('past'),list):
+        raise RadarError('The radar metadata has no observed-frame list. The provider response may have changed; try again later or update Stormwatch.')
     frames = {}
-    for frame in payload.get('radar',{}).get('past',[]):
+    for frame in radar['past']:
+        if not isinstance(frame,dict):
+            continue
         stamp, path = frame.get('time'), frame.get('path','')
-        if (isinstance(stamp,int) and now-3*3600 <= stamp <= now+60
+        if (type(stamp) is int and isinstance(path,str) and now-3*3600 <= stamp <= now+60
                 and re.fullmatch(r'/v2/radar/\d+',path)):
             frames[stamp] = path
     if not frames:
-        raise ValueError('No recent observed radar frames are available.')
+        raise RadarError('No radar observations from the last three hours are available. Check the system clock or try again later.')
     return sorted(frames.items())[-MAX_FRAMES:]
 
 
 def _read(url, limit, stop):
-    if stop.is_set():
-        raise RuntimeError('Radar loading stopped.')
-    with requests.get(url, headers=HEADERS, timeout=(5,10), stream=True, allow_redirects=False) as response:
-        response.raise_for_status()
-        if response.status_code != 200:
-            raise ValueError('Unexpected radar response status.')
-        chunks, length = [], 0
-        for chunk in response.iter_content(65536):
-            if stop.is_set():
-                raise RuntimeError('Radar loading stopped.')
-            length += len(chunk)
-            if length > limit:
-                raise ValueError('Radar response exceeded its size limit.')
-            chunks.append(chunk)
-        return b''.join(chunks)
+    for _ in range(4):
+        if stop.is_set():
+            raise RuntimeError('Radar loading stopped.')
+        host = urlparse(url).hostname
+        try:
+            with requests.get(url, headers=HEADERS, timeout=(5,10), stream=True, allow_redirects=False) as response:
+                code = response.status_code
+                if code in (301,302,303,307,308):
+                    target = urljoin(url,response.headers.get('Location',''))
+                    parsed = urlparse(target)
+                    if (parsed.scheme != 'https' or parsed.hostname not in ('api.rainviewer.com','tilecache.rainviewer.com')
+                            or parsed.username or parsed.password or parsed.port not in (None,443)):
+                        raise RadarError('The radar provider redirected to an unsupported destination. Update Stormwatch or check the provider status.')
+                    url = target
+                    continue
+                if code == 429:
+                    raise RadarError(f'{host} returned HTTP 429 (rate limit). Wait a few minutes before refreshing radar.')
+                if code in (401,403):
+                    raise RadarError(f'{host} returned HTTP {code} (access denied). Check firewall/provider access rules.')
+                if code != 200:
+                    raise RadarError(f'{host} returned HTTP {code}. The radar service may be unavailable; try again later.')
+                chunks, length = [], 0
+                for chunk in response.iter_content(65536):
+                    if stop.is_set():
+                        raise RuntimeError('Radar loading stopped.')
+                    length += len(chunk)
+                    if length > limit:
+                        raise RadarError('The radar response exceeded its size limit; the provider response may have changed.')
+                    chunks.append(chunk)
+                return b''.join(chunks)
+        except requests.RequestException as error:
+            raise connection_error(error,host) from None
+    raise RadarError('The radar provider redirected too many times. Try again later or check the provider status.')
 
 
 class RadarService:
@@ -101,16 +150,22 @@ class RadarService:
     def _tile(self, key):
         path, zoom, x, y = key
         data = _read(f'{TILE_HOST}{path}/256/{zoom}/{x}/{y}/2/1_1.png', 1024*1024, self.stop)
-        with Image.open(BytesIO(data)) as image:
-            if image.size != (256,256):
-                raise ValueError('Unexpected radar tile dimensions.')
-            return image.convert('RGBA')
+        try:
+            with Image.open(BytesIO(data)) as image:
+                if image.size != (256,256):
+                    raise RadarError('The provider returned unexpected radar tile dimensions. Try again later or update Stormwatch.')
+                return image.convert('RGBA')
+        except OSError:
+            raise RadarError('The radar host returned an unreadable image. A firewall or provider error page may have replaced the tile.') from None
 
     def load(self, view):
         import json
         if not (0 < view.width <= 1800 and 0 < view.height <= 1200 and view.scale > 0):
             raise ValueError('Resize the map to at most 1800 × 1200 pixels to load radar.')
-        metadata = json.loads(_read(METADATA_URL, 256*1024, self.stop))
+        try:
+            metadata = json.loads(_read(METADATA_URL, 256*1024, self.stop))
+        except (json.JSONDecodeError,UnicodeDecodeError):
+            raise RadarError('The radar metadata was not valid JSON. A firewall or provider error page may have replaced the response.') from None
         frames = parse_frames(metadata)
         zoom, x0, y0, x1, y1 = tile_layout(view)
         world = 256*2**zoom

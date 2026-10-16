@@ -55,6 +55,8 @@ class LocationProfile:
     warning_desktop: bool | None = None
     watch_sound: bool | None = None
     watch_desktop: bool | None = None
+    # None follows all monitored events; [] silences automatic event sounds.
+    sound_events: list[str] | None = None
 
     def validate(self):
         self.name = self.name.strip()
@@ -76,6 +78,11 @@ class LocationProfile:
                 value = getattr(self, f"{kind}_{channel}")
                 if value is not None and not isinstance(value, bool):
                     raise ValueError("Watch and warning notification rules must be on or off.")
+        if self.sound_events is not None:
+            if not isinstance(self.sound_events,list) or any(not isinstance(event,str) or
+                    not event.endswith((' Warning',' Watch')) for event in self.sound_events):
+                raise ValueError('Sound events must be a list of watch/warning event names.')
+            self.sound_events = sorted(set(self.sound_events))
         return self
 
     def allows(self, alert, channel):
@@ -83,14 +90,19 @@ class LocationProfile:
         kind = "warning" if event.endswith(" Warning") else "watch" if event.endswith(" Watch") else None
         if channel not in ("sound", "desktop") or kind is None or not getattr(self, channel):
             return False
+        if channel == 'sound' and self.sound_events is not None and event not in self.sound_events:
+            return False
         override = getattr(self, f"{kind}_{channel}")
         return override if override is not None else True
 
     def rules_summary(self):
         result = []
         for kind in ("Warning", "Watch"):
-            channels = [c.title() for c in ("sound", "desktop") if self.allows("Example " + kind, c)]
+            channels = [c.title() for c in ("sound", "desktop")
+                        if any(self.allows(event,c) for event in self.events if event.endswith(' '+kind))]
             result.append(f"{kind}s: {' + '.join(channels) or 'Off'}")
+        if self.sound_events is not None:
+            result.append(f'Sound filter: {len(self.sound_events)} event types' if self.sound_events else 'Sound filter: no events')
         return "\n".join(result)
 
     def matches(self, alert):

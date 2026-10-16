@@ -2,8 +2,8 @@
 from datetime import datetime, timezone
 import webbrowser
 
-from TkFlow import Button, Checkbox, Label
-from radar import RadarService
+from TkFlow import Button, Checkbox, Label, TextArea, Window
+from radar import RadarService, error_description
 
 
 class RadarPanel:
@@ -15,6 +15,8 @@ class RadarPanel:
         self.index, self.generation = 0, 0
         self.busy = self.playing = self.closed = False
         self.error = ''
+        self.diagnostic = ''
+        self.last_attempt = None
         self.play_timer = self.view_timer = self.refresh_timer = None
         self.enabled = Checkbox(parent,'Show recent radar',value=False,command=lambda _: self.toggle())
         tools = parent.row(padding=0)
@@ -28,8 +30,9 @@ class RadarPanel:
         self.status = Label(status_holder,'Radar off · Alert monitoring works independently.',style='Muted.TLabel',wraplength=740,expand=True,fill='both',anchor='nw')
         self.status.widget.bind('<Configure>',lambda e:self.status.configure(wraplength=max(200,e.width)))
         legend = parent.row(padding=0)
-        Label(legend,'Radar: blue/green → yellow/red = increasing precipitation intensity',style='Muted.TLabel',expand=True,wraplength=300)
+        Label(legend,'Radar: blue/green → yellow/red = increasing precipitation intensity',style='Muted.TLabel',expand=True,wraplength=180)
         Button(legend,'RainViewer',lambda:webbrowser.open('https://www.rainviewer.com'))
+        Button(legend,'Connection details',self.show_details)
         self.map.on_view_changed = self.view_changed
         self.update_buttons()
 
@@ -75,12 +78,16 @@ class RadarPanel:
             return
         self.stop_playback()
         self.busy = True
+        self.last_attempt = datetime.now(timezone.utc)
         generation = self.generation
         self.status.set('Loading recent observed radar… Alert boundaries remain available.')
         self.update_buttons()
-        self.app.run_in_thread(self.service.load,view,
-            on_result=lambda result:self.loaded(generation,result),
-            on_error=lambda error:self.failed(generation,view,error))
+        try:
+            self.app.run_in_thread(self.service.load,view,
+                on_result=lambda result:self.loaded(generation,result),
+                on_error=lambda error:self.failed(generation,view,error))
+        except RuntimeError:
+            self.failed(generation,view,ValueError('The background queue is busy. Try Refresh radar again shortly.'))
 
     def loaded(self, generation, result):
         self.busy = False
@@ -92,6 +99,7 @@ class RadarPanel:
             self.update_buttons()
             return
         self.error = ''
+        self.diagnostic = ''
         self.loaded_view, self.frames = view, frames
         self.index = len(frames)-1
         self.show_frame()
@@ -111,8 +119,8 @@ class RadarPanel:
             self.update_buttons()
             return
         self.error = 'Radar refresh failed'
-        self.status.set('RADAR UNAVAILABLE · Check the connection or retry. '+
-                        ('Previous imagery retained with its original timestamp.' if self.frames else 'No radar imagery is displayed.'))
+        self.diagnostic = error_description(error)
+        self.status.set('RADAR UNAVAILABLE · '+self.diagnostic)
         self.arm_refresh()
         self.update_buttons()
 
@@ -146,7 +154,23 @@ class RadarPanel:
         state = 'STALE RADAR' if latest_age > 1200 or self.error else 'Observed radar'
         observed = datetime.fromtimestamp(stamp,timezone.utc)
         self.status.set(f'{state} · {observed:%Y-%m-%d %H:%M UTC} · {age} min ago · Frame {self.index+1}/{len(self.frames)}'+
-                        (f' · {self.error}' if self.error else '')+' · Radar coverage can be incomplete.')
+                        (f' · {self.error}: {self.diagnostic}' if self.error else '')+' · Radar coverage can be incomplete.')
+
+    def show_details(self):
+        window = Window(self.app,'Radar connection details',width=690,height=480)
+        Label(window,'Radar connection',style='Heading.TLabel')
+        text = TextArea(window,readonly=True,expand=True,fill='both',bg='#101c30',fg='#e5edf8',padx=12,pady=12)
+        text.set(f"Last attempt: {self.last_attempt:%Y-%m-%d %H:%M:%S UTC}\n" if self.last_attempt else 'No connection attempt yet.\n')
+        text.append(f"\n{self.diagnostic or ('Recent radar imagery loaded successfully.' if self.frames else 'Enable Show recent radar on the map to connect.')}\n\n"
+                    'Required HTTPS hosts:\napi.rainviewer.com (frame metadata)\ntilecache.rainviewer.com (radar images)\n\n'
+                    'A proxy CONNECT 403 means the proxy blocked the destination before contacting RainViewer. '
+                    'It does not establish that RainViewer is down. In a managed cloud environment, allow both '
+                    'hosts in environment settings, save, and publish the configuration. On Windows, check your '
+                    'firewall/proxy rules. TLS failures require a correct clock and trusted certificates.\n\n'
+                    'If using a Windows executable, rebuild from the current source with main.spec; an older EXE '
+                    'does not include these changes.\n\n'
+                    'Alert monitoring continues independently. Retained imagery always keeps its original timestamp.')
+        Button(window,'Close',window.close)
 
     def step(self, delta):
         self.stop_playback()
