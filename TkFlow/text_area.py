@@ -68,6 +68,13 @@ class TextArea(Widget):
     def append(self, value: str, *, tag: str | None = None) -> TextArea:
         return self._edit(lambda: self.text.insert("end", value, (tag,) if tag else ()))
 
+    def append_segments(self, segments) -> TextArea:
+        """Insert a tagged batch with one trim/scroll operation."""
+        def insert():
+            for value, tag in segments:
+                self.text.insert("end", value, (tag,) if tag else ())
+        return self._edit(insert)
+
     def clear(self) -> TextArea:
         return self.set("")
 

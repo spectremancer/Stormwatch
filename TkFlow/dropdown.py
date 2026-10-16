@@ -34,6 +34,8 @@ class Dropdown(_ValueWidget):
         layout = _layout_options(options)
         self.variable = tk.StringVar(master=parent.widget, value=value)
         options.setdefault("state", "normal" if editable else "readonly")
+        if editable:
+            options.setdefault("style", "Input.TCombobox")
         self._attach(parent, ttk.Combobox(parent.widget, values=self.values,
                                         textvariable=self.variable, **options), **layout)
         self.widget.bind("<<ComboboxSelected>>", lambda _: changed(self.get()))

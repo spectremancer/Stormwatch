@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+from itertools import islice
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 import sqlite3
@@ -49,6 +50,7 @@ class StormwatchApp:
         self.running = self.busy = False
         self.generation = 0
         self.timer = None
+        self.processing_timer = None
         self.health_timer = None
         self.last_success = self.next_refresh = None
         self.last_error = self.coverage_warning = ""
@@ -154,7 +156,12 @@ class StormwatchApp:
         style.configure("Treeview", background="#101c30", fieldbackground="#101c30", foreground="#e5edf8", rowheight=28)
         style.configure("Treeview.Heading", background="#243a56", foreground="#e5edf8", padding=8)
         style.map("Treeview", background=[("selected", "#176caa")], foreground=[("selected", "#ffffff")])
-        style.configure("TEntry", fieldbackground="#142238", foreground="#e5edf8", insertcolor="#ffffff", padding=6)
+        style.configure("TEntry", fieldbackground="#ffffff", foreground="#000000", insertcolor="#000000", padding=6)
+        style.map("TEntry", foreground=[("disabled", "#555555"), ("!disabled", "#000000")],
+                  fieldbackground=[("disabled", "#eeeeee"), ("!disabled", "#ffffff")])
+        style.configure("Input.TCombobox", fieldbackground="#ffffff", foreground="#000000", insertcolor="#000000")
+        style.map("Input.TCombobox", foreground=[("disabled", "#555555"), ("!disabled", "#000000")],
+                  fieldbackground=[("disabled", "#eeeeee"), ("!disabled", "#ffffff")])
         style.configure("TFrame", background="#0b1424")
         style.configure("Panel.TFrame", background="#142238")
         style.configure("TLabel", background="#0b1424")
@@ -367,62 +374,80 @@ class StormwatchApp:
         return current, warning
 
     def received(self, generation, result):
-        self.busy = False
         if not self.running or generation != self.generation:
+            self.busy = False
             return
         current, warning = result
+        self.busy = True
         self.profile.events = sorted(self.selected_events())
         self.coverage_warning = warning
         if not warning:
             self.cancel_since = datetime.now(timezone.utc)
-        jobs = []
         try:
-            # Process cancellations last so their references override an active snapshot.
-            existing_ids = {row["id"] for row in self.history.rows()}
-            ordered = sorted(current.values(), key=lambda a: a.get("message_type") == "Cancel")
-            for alert in ordered:
-                self.add_event(alert["event"])
-                matched = [p for p in self.profiles if p.matches(alert)]
-                existing = alert["id"] in existing_ids
-                if not matched and not existing:
-                    continue
-                version, kind, legacy = self.history.observe(alert, locations=matched)
-                if matched and not self.history.displayed(alert["id"], version):
-                    self.append_alert(alert, kind, [p.name for p in matched])
-                    self.history.mark_displayed(alert["id"], version)
-                if alert.get("message_type") == "Cancel":
-                    for previous, status in self.history.cancel_references(alert):
-                        if any(p.matches(previous) for p in self.profiles):
-                            self.append_alert(previous, status)
-                end = instant(alert.get("ends") or alert.get("expires"))
-                expired = end and end <= datetime.now(timezone.utc)
-                for profile in matched:
-                    if expired and alert.get("message_type") != "Cancel":
-                        continue
-                    quiet = legacy or (not self.initialized and alert["event"] not in CRITICAL)
-                    for channel, enabled in ((c, profile.allows(alert, c)) for c in ("sound", "desktop")):
-                        if enabled and not (channel == "sound" and (expired or kind == "Cancelled")):
-                            self.history.schedule(alert["id"], version, profile.id, channel, quiet)
-                            jobs.append((alert, version, profile.id, channel, kind))
-            for alert, kind in self.history.reconcile(set(current)):
-                if any(p.matches(alert) for p in self.profiles):
-                    self.append_alert(alert, kind)
+            known = self.history.known_ids(current)
         except sqlite3.Error as error:
-            self.failed(generation, RuntimeError(f"Could not save alert history: {error}"))
+            self.failed(generation, RuntimeError(f"Could not read alert history: {error}"))
             return
+        state = dict(generation=generation, current=current, warning=warning, jobs=[],
+                     known=known,
+                     alerts=iter(sorted(current.values(), key=lambda a: a.get("message_type") == "Cancel")))
+        self.process_batch(state)
+
+    def process_batch(self, state):
+        self.processing_timer = None
+        if not self.running or state["generation"] != self.generation:
+            self.busy = False
+            return
+        batch = list(islice(state["alerts"], 20))
+        jobs, messages = state["jobs"], []
+        existing_ids = state["known"]
+        try:
+            with self.history.transaction():
+                for alert in batch:
+                    self.add_event(alert["event"])
+                    matched = [p for p in self.profiles if p.matches(alert)]
+                    existing = alert["id"] in existing_ids
+                    if not matched and not existing:
+                        continue
+                    version, kind, legacy = self.history.observe(alert, locations=matched)
+                    if matched and not self.history.displayed(alert["id"], version):
+                        messages.append((alert,kind,[p.name for p in matched]))
+                        self.history.mark_displayed(alert["id"], version)
+                    if alert.get("message_type") == "Cancel":
+                        for previous, status in self.history.cancel_references(alert):
+                            if any(p.matches(previous) for p in self.profiles):
+                                messages.append((previous,status,[]))
+                    end = instant(alert.get("ends") or alert.get("expires"))
+                    expired = end and end <= datetime.now(timezone.utc)
+                    for profile in matched:
+                        if expired and alert.get("message_type") != "Cancel":
+                            continue
+                        quiet = legacy or (not self.initialized and alert["event"] not in CRITICAL)
+                        for channel, enabled in ((c, profile.allows(alert, c)) for c in ("sound", "desktop")):
+                            if enabled and not (channel == "sound" and (expired or kind == "Cancelled")):
+                                if self.history.schedule(alert["id"], version, profile.id, channel, quiet):
+                                    jobs.append((alert, version, profile.id, channel, kind))
+            self.append_alerts(messages)
+            if len(batch) == 20:
+                self.processing_timer = self.app.after(1, lambda: self.process_batch(state))
+                return
+            changes = self.history.reconcile(set(state["current"]))
+            self.append_alerts([(alert,kind,[]) for alert,kind in changes if any(p.matches(alert) for p in self.profiles)])
+        except sqlite3.Error as error:
+            self.failed(state["generation"], RuntimeError(f"Could not save alert history: {error}"))
+            return
+        self.busy = False
         self.initialized = True
         self.last_success = datetime.now(timezone.utc)
         self.last_error = ""
         self.state.set("●  MONITORING")
         self.render_active()
-        # Pending failed channels are rechecked on each successful refresh. Successful
-        # channels are never replayed for the same version/profile.
         if not self.delivery_busy and jobs:
             self.delivery_busy = True
-            self.delivery_future = self.app.run_in_thread(self.send_notifications, generation, jobs,
+            self.delivery_future = self.app.run_in_thread(self.send_notifications, state["generation"], jobs,
                                    on_result=self.delivered, on_error=self.delivery_failed)
         self.schedule_next()
-        self.status.set(warning or "Alerts are current • Monitoring all enabled locations.")
+        self.status.set(state["warning"] or "Alerts are current • Monitoring all enabled locations.")
         self.update_health()
 
     def send_notifications(self, generation, jobs, manual=False):
@@ -488,7 +513,7 @@ class StormwatchApp:
             self.status.set("A notification submission is already in progress. Try again when it finishes.")
             return
         fresh = self.last_success and not self.last_error and (datetime.now(timezone.utc) - self.last_success).total_seconds() < max(120, self.service.interval * 2)
-        current = next((r for r in self.history.rows() if r["id"] == row["id"]), None)
+        current = self.history.get_alert(row["id"])
         profile = next((p for p in self.profiles if p.id == row["profile"]), None)
         receipt = self.history.delivery(row["id"], row["version"], row["profile"], row["channel"])
         if not fresh or not current or current["version"] != row["version"] or current["status"] not in ("Active", "Cancelled"):
@@ -566,8 +591,7 @@ class StormwatchApp:
         self.demo.tick()
         self.update_health()
         # An elapsed expiration can be determined locally, even while offline.
-        active_ids = {row["id"] for row in self.history.rows(active_only=True)}
-        changes = self.history.reconcile(active_ids)
+        changes = self.history.reconcile()
         if changes:
             for alert, kind in changes:
                 if any(p.matches(alert) for p in self.profiles):
@@ -576,14 +600,25 @@ class StormwatchApp:
         self.health_timer = self.app.after(1000, self.tick)
 
     def append_alert(self, alert, kind="New", locations=()):
+        self.append_alerts([(alert,kind,locations)])
+
+    def append_alerts(self, messages):
+        if not messages:
+            return
         self.empty.hide()
-        self.count += 1
+        self.count += len(messages)
         self.counter.set(f"{self.count} alert changes")
-        tag = "warning" if alert["event"].endswith("Warning") else "watch"
-        self.feed.append(f"{kind.upper()}  ·  {alert['event']}\n", tag=tag)
-        self.feed.append(f"{datetime.now():%b %d · %H:%M:%S}  •  {alert['severity']}  •  {', '.join(locations)}\n", tag="meta")
-        self.feed.append(f"{alert['headline']}\n\n{alert['area']}\n\n{alert['instruction']}\n", tag="body")
-        self.feed.append(f"Expires: {alert['expires']}\n{alert['url']}\n\n{'─' * 45}\n\n", tag="meta")
+        segments = []
+        def excerpt(value, limit):
+            return value if len(value) <= limit else value[:limit] + "… [Full text in alert details]"
+        for alert, kind, locations in messages:
+            tag = "warning" if alert["event"].endswith("Warning") else "watch"
+            segments.extend([
+                (f"{kind.upper()}  ·  {alert['event']}\n",tag),
+                (f"{datetime.now():%b %d · %H:%M:%S}  •  {alert['severity']}  •  {', '.join(locations)}\n","meta"),
+                (f"{excerpt(alert['headline'],2000)}\n\n{excerpt(alert['area'],4000)}\n\n{excerpt(alert['instruction'],8000)}\n","body"),
+                (f"Expires: {alert['expires']}\n{alert['url']}\n\n{'─' * 45}\n\n","meta")])
+        self.feed.append_segments(segments)
 
     def open_alert(self, alert):
         title = ("SIMULATION · " if alert.get("simulated") else "") + alert["event"]
@@ -666,7 +701,7 @@ class StormwatchApp:
             return
         self.running = False
         self.generation += 1
-        for timer in (self.timer, self.health_timer):
+        for timer in (self.timer, self.processing_timer, self.health_timer):
             if timer is not None:
                 self.app.root.after_cancel(timer)
         self.tray.stop()

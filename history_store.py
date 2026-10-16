@@ -51,6 +51,8 @@ class HistoryArchive:
                     event TEXT NOT NULL, UNIQUE(id,version,kind));
                 CREATE TABLE IF NOT EXISTS history_locations (sequence INTEGER, profile TEXT, name TEXT NOT NULL,
                     PRIMARY KEY(sequence,profile));
+                CREATE INDEX IF NOT EXISTS history_event_name ON history_events(event);
+                CREATE INDEX IF NOT EXISTS history_change ON history_events(kind);
                 CREATE INDEX IF NOT EXISTS history_time ON history_events(recorded_at);
                 CREATE INDEX IF NOT EXISTS history_location_name ON history_locations(name);
             ''')
@@ -75,12 +77,16 @@ class HistoryArchive:
     def _archive_event(self, alert, version, kind, locations=None, stamp=None, basis='Observed'):
         if stamp is None:
             stamp = datetime.now(timezone.utc).isoformat()
-        self.connection.execute('''INSERT OR IGNORE INTO history_events
-            (id,version,kind,recorded_at,time_basis,data,search_text,event) VALUES (?,?,?,?,?,?,?,?)''',
-            (alert['id'], version, kind, stamp, basis, json.dumps(alert),
-             ' '.join(str(alert.get(k,'')) for k in ('event','headline','area','description','instruction')).casefold(), alert['event']))
-        sequence = self.connection.execute('SELECT sequence FROM history_events WHERE id=? AND version=? AND kind=?',
-                                          (alert['id'],version,kind)).fetchone()[0]
+        existing = self.connection.execute('SELECT sequence FROM history_events WHERE id=? AND version=? AND kind=?',
+                                           (alert['id'],version,kind)).fetchone()
+        if existing:
+            sequence = existing[0]
+        else:
+            cursor = self.connection.execute('''INSERT INTO history_events
+                (id,version,kind,recorded_at,time_basis,data,search_text,event) VALUES (?,?,?,?,?,?,?,?)''',
+                (alert['id'], version, kind, stamp, basis, json.dumps(alert),
+                 ' '.join(str(alert.get(k,'')) for k in ('event','headline','area','description','instruction')).casefold(), alert['event']))
+            sequence = cursor.lastrowid
         if locations is None:
             inherited = self.connection.execute('''SELECT h.profile,h.name FROM history_locations h
                 JOIN history_events e ON e.sequence=h.sequence WHERE e.id=? AND e.version=? ORDER BY e.sequence''',

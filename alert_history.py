@@ -1,4 +1,5 @@
 """Versioned alerts, saved locations, and independent delivery receipts."""
+from contextlib import contextmanager
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -35,6 +36,7 @@ class AlertHistory(HistoryArchive):
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.lock = threading.RLock()
+        self._transaction_depth = 0
         self.connection = sqlite3.connect(self.path, check_same_thread=False)
         self.connection.row_factory = sqlite3.Row
         self.connection.execute("PRAGMA journal_mode=WAL")
@@ -53,6 +55,15 @@ class AlertHistory(HistoryArchive):
                 state TEXT DEFAULT 'pending', attempts INTEGER DEFAULT 0, error TEXT DEFAULT '',
                 PRIMARY KEY(id, version, profile, channel));
         ''')
+        alert_columns = {row[1] for row in self.connection.execute("PRAGMA table_info(alerts)")}
+        if "expires_at" not in alert_columns:
+            self.connection.execute("ALTER TABLE alerts ADD COLUMN expires_at TEXT NOT NULL DEFAULT ''")
+            for row in self.connection.execute("SELECT id,data FROM alerts").fetchall():
+                alert = json.loads(row["data"])
+                end = instant(alert.get("ends") or alert.get("expires"))
+                self.connection.execute("UPDATE alerts SET expires_at=? WHERE id=?", (end.isoformat() if end else "", row["id"]))
+        self.connection.execute("CREATE INDEX IF NOT EXISTS active_alert_expiry ON alerts(status,expires_at)")
+        self.connection.execute("CREATE INDEX IF NOT EXISTS active_alert_updated ON alerts(status,updated DESC)")
         columns = {row[1] for row in self.connection.execute("PRAGMA table_info(deliveries)")}
         for name in ("scheduled_at", "last_attempt", "reason"):
             if name not in columns:
@@ -60,9 +71,46 @@ class AlertHistory(HistoryArchive):
         self.connection.commit()
         self._initialize_archive()
 
+    @contextmanager
+    def transaction(self):
+        """Nested operations share one atomic commit per short processing batch."""
+        with self.lock:
+            outer = self._transaction_depth == 0
+            self._transaction_depth += 1
+            try:
+                yield
+            except BaseException:
+                if outer:
+                    self.connection.rollback()
+                raise
+            else:
+                if outer:
+                    try:
+                        self.connection.commit()
+                    except BaseException:
+                        self.connection.rollback()
+                        raise
+            finally:
+                self._transaction_depth -= 1
+
+    def known_ids(self, alert_ids):
+        values = list(alert_ids)
+        result = set()
+        with self.lock:
+            for offset in range(0,len(values),500):
+                part = values[offset:offset+500]
+                result.update(row[0] for row in self.connection.execute(
+                    "SELECT id FROM alerts WHERE id IN (" + ",".join("?" for _ in part) + ")", part))
+        return result
+
+    def get_alert(self, alert_id):
+        with self.lock:
+            row = self.connection.execute("SELECT * FROM alerts WHERE id=?", (alert_id,)).fetchone()
+            return dict(row, alert=json.loads(row["data"])) if row else None
+
     def claim(self, alert_id):
         """Retained for compatibility with the original ID-only store."""
-        with self.lock, self.connection:
+        with self.transaction():
             result = self.connection.execute("INSERT OR IGNORE INTO processed_alerts (id) VALUES (?)", (alert_id,))
             return result.rowcount == 1
 
@@ -72,7 +120,7 @@ class AlertHistory(HistoryArchive):
             return json.loads(row[0]) if row else default
 
     def save_setting(self, name, value):
-        with self.lock, self.connection:
+        with self.transaction():
             self.connection.execute("INSERT OR REPLACE INTO settings VALUES (?, ?)", (name, json.dumps(value)))
 
     def profiles(self):
@@ -81,18 +129,18 @@ class AlertHistory(HistoryArchive):
 
     def save_profile(self, profile):
         profile.validate()
-        with self.lock, self.connection:
+        with self.transaction():
             self.connection.execute("INSERT OR REPLACE INTO profiles VALUES (?, ?)", (profile.id, profile.to_json()))
 
     def delete_profile(self, profile_id):
-        with self.lock, self.connection:
+        with self.transaction():
             self.connection.execute("DELETE FROM profiles WHERE id=?", (profile_id,))
 
     def observe(self, alert, now=None, locations=None):
         now = now or datetime.now(timezone.utc)
         version = version_of(alert)
         data = json.dumps(alert)
-        with self.lock, self.connection:
+        with self.transaction():
             old = self.connection.execute("SELECT * FROM alerts WHERE id=?", (alert["id"],)).fetchone()
             reference_old = None
             for ref in alert.get("references", []):
@@ -102,6 +150,16 @@ class AlertHistory(HistoryArchive):
                     reference_old = referenced
                 if referenced and alert.get("message_type", "").lower() == "update":
                     self.connection.execute("UPDATE alerts SET status='Superseded' WHERE id=?", (reference_id,))
+            end = instant(alert.get("ends") or alert.get("expires"))
+            cancelled = alert.get("message_type", "").lower() == "cancel"
+            status = "Cancelled" if cancelled else "Expired" if end and end <= now else "Active"
+            if old and old["version"] == version:
+                kind = self.connection.execute("SELECT kind FROM versions WHERE id=? AND version=?", (alert["id"],version)).fetchone()[0]
+                if old["data"] != data or old["status"] != status:
+                    self.connection.execute("UPDATE alerts SET data=?,status=?,updated=?,expires_at=? WHERE id=?",
+                        (data,status,now.isoformat(),end.isoformat() if end else "",alert["id"]))
+                self._archive_event(alert, version, kind, locations)
+                return version, kind, False
             previous = old or reference_old
             kind = "New" if previous is None else "Updated"
             if previous:
@@ -109,15 +167,12 @@ class AlertHistory(HistoryArchive):
                 old_end, new_end = instant(old_alert.get("ends") or old_alert.get("expires")), instant(alert.get("ends") or alert.get("expires"))
                 if old_end and new_end and new_end > old_end:
                     kind = "Extended"
-            cancelled = alert.get("message_type", "").lower() == "cancel"
-            end = instant(alert.get("ends") or alert.get("expires"))
-            status = "Cancelled" if cancelled else "Expired" if end and end <= now else "Active"
             if cancelled:
                 kind = "Cancelled"
             elif status == "Expired":
                 kind = "Expired"
-            self.connection.execute("INSERT OR REPLACE INTO alerts VALUES (?, ?, ?, ?, ?)",
-                                    (alert["id"], version, data, status, now.isoformat()))
+            self.connection.execute("INSERT OR REPLACE INTO alerts (id,version,data,status,updated,expires_at) VALUES (?, ?, ?, ?, ?, ?)",
+                                    (alert["id"], version, data, status, now.isoformat(), end.isoformat() if end else ""))
             self.connection.execute("INSERT OR IGNORE INTO versions (id, version, kind, data) VALUES (?, ?, ?, ?)",
                                     (alert["id"], version, kind, data))
             kind = self.connection.execute("SELECT kind FROM versions WHERE id=? AND version=?", (alert["id"], version)).fetchone()[0]
@@ -133,14 +188,17 @@ class AlertHistory(HistoryArchive):
             return bool(self.connection.execute("SELECT displayed FROM versions WHERE id=? AND version=?", (alert_id, version)).fetchone()[0])
 
     def mark_displayed(self, alert_id, version):
-        with self.lock, self.connection:
+        with self.transaction():
             self.connection.execute("UPDATE versions SET displayed=1 WHERE id=? AND version=?", (alert_id, version))
 
     def schedule(self, alert_id, version, profile, channel, quiet=False, reason=""):
-        with self.lock, self.connection:
+        with self.transaction():
             self.connection.execute("INSERT OR IGNORE INTO deliveries (id,version,profile,channel,state,scheduled_at,reason) VALUES (?,?,?,?,?,?,?)",
                                     (alert_id, version, profile, channel, "skipped" if quiet else "pending",
                                      datetime.now(timezone.utc).isoformat(), reason or ("Quiet startup or legacy baseline" if quiet else "")))
+            row = self.connection.execute("SELECT state,attempts FROM deliveries WHERE id=? AND version=? AND profile=? AND channel=?",
+                                          (alert_id,version,profile,channel)).fetchone()
+            return row["state"] in ("pending","failed") and row["attempts"] < 3
 
     def pending(self, alert_id, version, profile, channel):
         with self.lock:
@@ -149,14 +207,14 @@ class AlertHistory(HistoryArchive):
             return bool(row and row["state"] in ("pending", "failed") and row["attempts"] < 3)
 
     def receipt(self, alert_id, version, profile, channel, error=None):
-        with self.lock, self.connection:
+        with self.transaction():
             self.connection.execute("UPDATE deliveries SET state=?, attempts=attempts+1, error=?, last_attempt=? WHERE id=? AND version=? AND profile=? AND channel=?",
                                     ("failed" if error else "sent", str(error or ""), datetime.now(timezone.utc).isoformat(),
                                      alert_id, version, profile, channel))
 
     def submission(self, alert_id, version, channel):
         """Shared result for one alert version/channel, importing older receipts lazily."""
-        with self.lock, self.connection:
+        with self.transaction():
             row = self.connection.execute("SELECT * FROM channel_submissions WHERE id=? AND version=? AND channel=?",
                                           (alert_id, version, channel)).fetchone()
             if row:
@@ -183,7 +241,7 @@ class AlertHistory(HistoryArchive):
         """Cover a new overlapping location without repeating an earlier submission."""
         names = ", ".join(json.loads(submission["members"])) or "an earlier matching location"
         reason = f"Shared {channel} result for this alert version; earlier submission: {names}. No duplicate notification."
-        with self.lock, self.connection:
+        with self.transaction():
             for profile in profiles:
                 self.connection.execute("""UPDATE deliveries SET state=?, attempts=?, error=?, last_attempt=?, reason=?
                     WHERE id=? AND version=? AND profile=? AND channel=? AND state IN ('pending','failed')""",
@@ -197,7 +255,7 @@ class AlertHistory(HistoryArchive):
         stamp = datetime.now(timezone.utc).isoformat()
         state = "failed" if error else "sent"
         reason = "Combined notification for " + ", ".join(names) if len(names) > 1 else "Notification for " + names[0]
-        with self.lock, self.connection:
+        with self.transaction():
             self.connection.execute("UPDATE channel_submissions SET state=?,attempts=?,error=?,last_attempt=?,members=? WHERE id=? AND version=? AND channel=?",
                 (state, attempts, str(error or ""), stamp, json.dumps(names), alert_id, version, channel))
             for profile in profiles:
@@ -237,23 +295,32 @@ class AlertHistory(HistoryArchive):
             sql = "SELECT * FROM alerts" + (" WHERE status='Active'" if active_only else "") + " ORDER BY updated DESC"
             return [dict(row, alert=json.loads(row["data"])) for row in self.connection.execute(sql)]
 
-    def reconcile(self, current_ids, now=None):
-        """Absence is not proof of cancellation. Failed polls never call this."""
+    def reconcile(self, current_ids=None, now=None):
+        """Only decode changed alerts; without a snapshot, check indexed expirations."""
         now = now or datetime.now(timezone.utc)
+        stamp = now.astimezone(timezone.utc).isoformat()
         changes = []
-        with self.lock, self.connection:
-            for row in self.rows(active_only=True):
-                end = instant(row["alert"].get("ends") or row["alert"].get("expires"))
-                status = "Expired" if end and end <= now else "No longer active" if row["id"] not in current_ids else None
-                if status:
-                    self.connection.execute("UPDATE alerts SET status=? WHERE id=?", (status, row["id"]))
-                    self._archive_event(row["alert"], row["version"], status, stamp=now.astimezone(timezone.utc).isoformat())
-                    changes.append((row["alert"], status))
+        with self.transaction():
+            if current_ids is None:
+                candidates = [(r["id"], "Expired") for r in self.connection.execute(
+                    "SELECT id FROM alerts WHERE status='Active' AND expires_at!='' AND expires_at<=?", (stamp,))]
+            else:
+                candidates = []
+                for row in self.connection.execute("SELECT id,expires_at FROM alerts WHERE status='Active'"):
+                    status = "Expired" if row["expires_at"] and row["expires_at"] <= stamp else "No longer active" if row["id"] not in current_ids else None
+                    if status:
+                        candidates.append((row["id"], status))
+            for alert_id, status in candidates:
+                row = self.connection.execute("SELECT version,data FROM alerts WHERE id=?", (alert_id,)).fetchone()
+                alert = json.loads(row["data"])
+                self.connection.execute("UPDATE alerts SET status=? WHERE id=?", (status,alert_id))
+                self._archive_event(alert,row["version"],status,stamp=stamp)
+                changes.append((alert,status))
         return changes
 
     def cancel_references(self, alert):
         changed = []
-        with self.lock, self.connection:
+        with self.transaction():
             for ref in alert.get("references", []):
                 alert_id = ref.get("identifier") or ref.get("id") if isinstance(ref, dict) else ref
                 row = self.connection.execute("SELECT data,version FROM alerts WHERE id=? AND status='Active'", (alert_id,)).fetchone()

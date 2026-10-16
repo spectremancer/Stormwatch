@@ -250,6 +250,36 @@ Network access is required only to `api.weather.gov` for alert, cancellation,
 county, point-resolution, and boundary requests. This is an informational
 monitor; follow official local weather guidance.
 
+## Responsiveness and input readability
+
+Editable text fields use black text and a black cursor on a white background,
+including editable search dropdowns. Disabled fields use gray text.
+
+Incoming alerts are processed in batches of 20, yielding to the interface between
+batches. Each batch shares a database transaction and a single feed update.
+Unchanged alerts avoid unnecessary database writes, and unchanged cards and map
+content avoid rebuilding their widgets. Map dragging redraws once per idle cycle.
+Expiration checks use an indexed timestamp instead of loading every active alert
+each second; incoming IDs and manual retries also use targeted database lookups.
+
+The feed retains its 4,000-line limit and abbreviates unusually long headlines,
+areas, and instructions. Full alert text remains available in alert details and
+saved history. These changes do not delete saved history. Existing databases
+automatically receive the expiry column and indexes on startup.
+
+For a reproducible synthetic load check, with a display available:
+
+```sh
+python scripts/benchmark_processing.py --incoming 1000 --stored 10000 --passes 3
+```
+
+This uses a temporary database and sends no real notifications. In a Linux virtual
+display check, the original 1,000-alert snapshot blocked processing for about 4.7
+seconds. After these changes, the same-sized snapshot completed in about 0.26
+seconds, yielding between batches, with a maximum measured UI heartbeat gap of
+33 ms. Ten idle health ticks took about 1 ms. Timings vary with hardware, alert
+content, and platform; Windows performance has not been measured here.
+
 ## Validation
 
 ```sh
@@ -262,7 +292,9 @@ are explicitly skipped. For headless runs, use a virtual X server and
 versions, lifecycle transitions, channel-specific retries, migration, card
 pagination, map interaction, tray failure handling, guided location setup,
 delivery-panel retries, simulation isolation, shared overlap submissions,
-watch/warning rules, history filters, and full snapshot CSV export. Windows Run-entry and
+watch/warning rules, history filters, full snapshot CSV export, editable-field
+contrast, large batches, transaction rollback, idle expiry lookups, and redraw
+reuse. Windows Run-entry and
 notification submission paths are mocked on Linux; actual Windows tray/toast
 behavior still needs verification on Windows.
 

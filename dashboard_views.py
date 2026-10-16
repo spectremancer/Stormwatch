@@ -55,6 +55,7 @@ class Cards(Widget):
     def __init__(self, parent, open_alert):
         self.open_alert = open_alert
         self.rows, self.page_index = [], 0
+        self._page_signature = None
         frame = ttk.Frame(parent.widget)
         self.canvas = tk.Canvas(frame, background=BG, highlightthickness=0)
         self.body = ttk.Frame(self.canvas)
@@ -91,6 +92,10 @@ class Cards(Widget):
     def draw_page(self):
         start = self.page_index * 20
         rows = self.rows[start:start + 20]
+        signature = (self.page_index,len(self.rows),tuple((r["id"],r.get("version"),r["alert"],tuple(r.get("locations",()))) for r in rows))
+        if signature == self._page_signature:
+            return
+        self._page_signature = signature
         self.page_label.configure(text=f"{start + 1 if rows else 0}–{start + len(rows)} of {len(self.rows)} alerts")
         self.previous.state(["disabled"] if self.page_index == 0 else ["!disabled"])
         self.next.state(["disabled"] if start + 20 >= len(self.rows) else ["!disabled"])
@@ -133,11 +138,15 @@ class AlertMap(Widget):
         self._attach(parent, self.canvas, expand=True, fill="both")
         self.open_alert = open_alert
         self.rows, self.profiles = [], []
+        self._render_signature = None
+        self._draw_timer = None
+        self._dirty = True
         self.place_labels = []
         self.center = (-98.0, 39.0)
         self.scale = 8.0
         self.drag = None
-        self.canvas.bind("<Configure>", lambda e: self.draw())
+        self.canvas.bind("<Configure>", lambda e: self.request_draw())
+        self.canvas.bind("<Map>", lambda e: self.request_draw())
         self.canvas.bind("<ButtonPress-1>", self.start_drag)
         self.canvas.bind("<B1-Motion>", self.move)
         self.canvas.bind("<ButtonRelease-1>", self.release)
@@ -150,8 +159,31 @@ class AlertMap(Widget):
             self.land = json.load(source)["features"]
 
     def render(self, rows, profiles):
+        signature = (tuple((r["id"],r.get("version"),r["alert"].get("event"),r["alert"].get("simulated"),r["alert"].get("geometry")) for r in rows),
+                     tuple((p.id,p.name,p.enabled,p.longitude,p.latitude) for p in profiles),tuple(self.place_labels))
         self.rows, self.profiles = rows, profiles
-        self.draw()
+        if signature != self._render_signature:
+            self._render_signature = signature
+            self._dirty = True
+            if self.canvas.winfo_ismapped():
+                self.request_draw()
+
+    def request_draw(self):
+        self._dirty = True
+        if self._draw_timer is None and not self._destroyed:
+            self._draw_timer = self.app.root.after_idle(self.flush_draw)
+
+    def flush_draw(self):
+        self._draw_timer = None
+        if self._dirty and self.canvas.winfo_ismapped():
+            self._dirty = False
+            self.draw()
+
+    def _dispose(self):
+        if self._draw_timer is not None:
+            self.app.root.after_cancel(self._draw_timer)
+            self._draw_timer = None
+        super()._dispose()
 
     def project(self, lon, lat):
         return (self.canvas.winfo_width() / 2 + (lon - self.center[0]) * self.scale,
@@ -159,7 +191,7 @@ class AlertMap(Widget):
 
     def zoom(self, factor):
         self.scale = max(1, min(2000, self.scale * factor))
-        self.draw()
+        self.request_draw()
 
     def fit(self):
         points = [(p.longitude, p.latitude) for p in self.profiles if p.enabled and p.latitude is not None]
@@ -173,7 +205,7 @@ class AlertMap(Widget):
                              max(1, self.canvas.winfo_height() - 100) / max(2, max(ys) - min(ys)))
         else:
             self.center, self.scale = (-98, 39), 8
-        self.draw()
+        self.request_draw()
 
     def start_drag(self, event):
         self.drag = (event.x, event.y, self.center)
@@ -182,7 +214,7 @@ class AlertMap(Widget):
         if self.drag:
             x, y, center = self.drag
             self.center = (center[0] - (event.x - x) / self.scale, center[1] + (event.y - y) / self.scale)
-            self.draw()
+            self.request_draw()
 
     def release(self, event):
         if self.drag and abs(event.x - self.drag[0]) + abs(event.y - self.drag[1]) < 5:
