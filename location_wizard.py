@@ -6,6 +6,7 @@ from TkFlow import Button, Checkbox, Form, Label, TextInput, Window
 from TkFlow.widget import Widget
 from dashboard_views import AlertMap
 from place_search import nearby_places, search_places
+from notification_rules import add_rule_fields, rule_values
 
 
 class Results(Widget):
@@ -62,6 +63,7 @@ class LocationWizard:
         self.form.add_checkbox('enabled', 'Monitoring', True, text='Enable monitoring for this location')
         self.form.add_checkbox('sound', 'Sound', True, text='Play alert sound')
         self.form.add_checkbox('desktop', 'Desktop', True, text='Send desktop notifications')
+        add_rule_fields(self.form, owner.profile)
         self.form.add_label('Select the events you want to follow:', style='Heading.TLabel')
         self.events = {event: Checkbox(self.form.body, event, value=True)
                        for event in owner.profile.events or ['Tornado Warning', 'Tornado Watch', 'Hurricane Warning', 'Hurricane Watch']}
@@ -163,7 +165,7 @@ class LocationWizard:
             values = self.form.get()
             candidate = replace(self.candidate, name=values['name'], enabled=values['enabled'],
                 sound=values['sound'], desktop=values['desktop'],
-                events=[event for event, control in self.events.items() if control.get()]).validate()
+                events=[event for event, control in self.events.items() if control.get()], **rule_values(values)).validate()
             if any(p.name.casefold() == candidate.name.casefold() for p in self.owner.profiles):
                 raise ValueError('That location name already exists. Choose a different name.')
             if candidate.enabled and not candidate.events:

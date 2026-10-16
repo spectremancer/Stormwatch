@@ -51,6 +51,10 @@ class LocationProfile:
     enabled: bool = True
     sound: bool = True
     desktop: bool = True
+    warning_sound: bool | None = None
+    warning_desktop: bool | None = None
+    watch_sound: bool | None = None
+    watch_desktop: bool | None = None
 
     def validate(self):
         self.name = self.name.strip()
@@ -67,7 +71,27 @@ class LocationProfile:
         if self.latitude is not None and (not math.isfinite(self.latitude) or not math.isfinite(self.longitude) or
                                           not -90 <= self.latitude <= 90 or not -180 <= self.longitude <= 180):
             raise ValueError("Latitude must be -90…90 and longitude -180…180.")
+        for kind in ("warning", "watch"):
+            for channel in ("sound", "desktop"):
+                value = getattr(self, f"{kind}_{channel}")
+                if value is not None and not isinstance(value, bool):
+                    raise ValueError("Watch and warning notification rules must be on or off.")
         return self
+
+    def allows(self, alert, channel):
+        event = alert.get("event", "") if isinstance(alert, dict) else alert
+        kind = "warning" if event.endswith(" Warning") else "watch" if event.endswith(" Watch") else None
+        if channel not in ("sound", "desktop") or kind is None or not getattr(self, channel):
+            return False
+        override = getattr(self, f"{kind}_{channel}")
+        return override if override is not None else True
+
+    def rules_summary(self):
+        result = []
+        for kind in ("Warning", "Watch"):
+            channels = [c.title() for c in ("sound", "desktop") if self.allows("Example " + kind, c)]
+            result.append(f"{kind}s: {' + '.join(channels) or 'Off'}")
+        return "\n".join(result)
 
     def matches(self, alert):
         if not self.enabled or alert["event"] not in self.events:

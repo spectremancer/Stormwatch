@@ -20,6 +20,8 @@ from location_wizard import LocationWizard
 from delivery_panel import DeliveryPanel
 from demo import DemoPanel
 from locations import LocationProfile
+from notification_rules import add_rule_fields, rule_values
+from history_panel import HistoryPanel
 
 EVENT_FAMILIES = (
     "Tornado", "Severe Thunderstorm", "Hurricane", "Tropical Storm",
@@ -73,6 +75,7 @@ class StormwatchApp:
         self.profile_picker = Dropdown(controls, [p.name for p in self.profiles],
                                        on_change=self.choose_profile)
         self.location_summary = Label(controls, self.profile.summary(), style="Muted.TLabel", wraplength=290)
+        self.rule_summary = Label(controls, self.profile.rules_summary(), style="Muted.TLabel", wraplength=300)
         buttons = controls.row(padding=0)
         Button(buttons, "Add", self.add_location)
         Button(buttons, "Edit", self.edit_profile)
@@ -128,10 +131,12 @@ class StormwatchApp:
               style="Muted.TLabel", wraplength=740)
         delivery_page = self.tabs.page("Delivery")
         self.delivery_panel = DeliveryPanel(delivery_page, self.history, self.retry_delivery, lambda: self.running)
+        history_page = self.tabs.page("History")
+        self.history_panel = HistoryPanel(history_page, self)
         demo_page = self.tabs.page("Demo")
         self.demo = DemoPanel(demo_page, self)
         self.location_wizard = None
-        self.tabs.widget.bind("<<NotebookTabChanged>>", lambda _: self.delivery_panel.refresh())
+        self.tabs.widget.bind("<<NotebookTabChanged>>", lambda _: self.refresh_records())
         self.status = Label(self.app, "Ready • Choose locations and start monitoring.", style="Muted.TLabel", wraplength=1180)
         self.tray = Tray(self.app, self.show_window, self.close, self.on_tray_ready, self.tray_failed)
         self.app.root.protocol("WM_DELETE_WINDOW", self.window_closed)
@@ -149,6 +154,7 @@ class StormwatchApp:
         style.configure("Treeview", background="#101c30", fieldbackground="#101c30", foreground="#e5edf8", rowheight=28)
         style.configure("Treeview.Heading", background="#243a56", foreground="#e5edf8", padding=8)
         style.map("Treeview", background=[("selected", "#176caa")], foreground=[("selected", "#ffffff")])
+        style.configure("TEntry", fieldbackground="#142238", foreground="#e5edf8", insertcolor="#ffffff", padding=6)
         style.configure("TFrame", background="#0b1424")
         style.configure("Panel.TFrame", background="#142238")
         style.configure("TLabel", background="#0b1424")
@@ -191,6 +197,7 @@ class StormwatchApp:
         for event, control in self.choices.items():
             control.set(event in self.profile.events)
         self.location_summary.set(self.profile.summary())
+        self.rule_summary.set(self.profile.rules_summary())
         self.update_selection(save=False)
         self.loading_profile = False
 
@@ -222,6 +229,7 @@ class StormwatchApp:
         form.add_checkbox("enabled", "Monitor this location", profile.enabled, text="Enabled")
         form.add_checkbox("sound", "Sound for selected event types", profile.sound, text="Play alert.mp3")
         form.add_checkbox("desktop", "Desktop notifications", profile.desktop, text="Send desktop notifications")
+        add_rule_fields(form, profile)
         note = form.add_label("Blank geography monitors all US alerts. When combined, filters must all match.\n"
                               "A coordinate is resolved through NWS when saved. County codes identify counties exactly.", wraplength=470)
 
@@ -246,7 +254,8 @@ class StormwatchApp:
                                     counties=values["counties"].split(","),
                                     latitude=float(values["lat"]) if values["lat"].strip() else None,
                                     longitude=float(values["lon"]) if values["lon"].strip() else None,
-                                    enabled=values["enabled"], sound=values["sound"], desktop=values["desktop"]).validate()
+                                    enabled=values["enabled"], sound=values["sound"], desktop=values["desktop"],
+                                    **rule_values(values)).validate()
                 if any(p.name == candidate.name and p.id != candidate.id for p in self.profiles):
                     raise ValueError("A location with this name already exists.")
                 if candidate.latitude is None:
@@ -377,7 +386,7 @@ class StormwatchApp:
                 existing = alert["id"] in existing_ids
                 if not matched and not existing:
                     continue
-                version, kind, legacy = self.history.observe(alert)
+                version, kind, legacy = self.history.observe(alert, locations=matched)
                 if matched and not self.history.displayed(alert["id"], version):
                     self.append_alert(alert, kind, [p.name for p in matched])
                     self.history.mark_displayed(alert["id"], version)
@@ -391,7 +400,7 @@ class StormwatchApp:
                     if expired and alert.get("message_type") != "Cancel":
                         continue
                     quiet = legacy or (not self.initialized and alert["event"] not in CRITICAL)
-                    for channel, enabled in (("sound", profile.sound), ("desktop", profile.desktop)):
+                    for channel, enabled in ((c, profile.allows(alert, c)) for c in ("sound", "desktop")):
                         if enabled and not (channel == "sound" and (expired or kind == "Cancelled")):
                             self.history.schedule(alert["id"], version, profile.id, channel, quiet)
                             jobs.append((alert, version, profile.id, channel, kind))
@@ -418,37 +427,49 @@ class StormwatchApp:
 
     def send_notifications(self, generation, jobs, manual=False):
         errors = []
-        for alert, version, profile_id, channel, kind in jobs:
-            profile = next((p for p in self.profiles if p.id == profile_id), None)
-            if not profile or not profile.matches(alert) or not getattr(profile, channel):
-                continue
-            key = (alert["id"], version, profile_id, channel)
-            receipt = self.history.delivery(*key)
-            if not receipt or (receipt["state"] != "failed" if manual else not self.history.pending(*key)):
-                continue
+        grouped = {}
+        for alert, version, _, channel, kind in jobs:
+            grouped[(alert["id"], version, channel)] = (alert, kind)
+        for (alert_id, version, channel), (alert, kind) in grouped.items():
             with self.sound_lock:
                 if not self.running or generation != self.generation:
                     break
-                if not self.history.is_current(alert["id"], version):
+                if not self.history.is_current(alert_id, version):
                     continue
                 end = instant(alert.get("ends") or alert.get("expires"))
                 if end and end <= datetime.now(timezone.utc) and kind != "Cancelled":
                     continue
+                profiles = []
+                for profile in list(self.profiles):
+                    if not profile.matches(alert) or not profile.allows(alert, channel):
+                        continue
+                    row = self.history.delivery(alert_id, version, profile.id, channel)
+                    if row and row["state"] in ("pending", "failed"):
+                        profiles.append(profile)
+                if not profiles:
+                    continue
+                submission = self.history.submission(alert_id, version, channel)
+                if submission["state"] == "sent" or (submission["attempts"] >= 3 and not manual):
+                    self.history.share_submission(alert_id, version, channel, profiles, submission)
+                    continue
+                if manual and not any(self.history.delivery(alert_id, version, p.id, channel)["state"] == "failed" for p in profiles):
+                    continue
+                names = ", ".join(p.name for p in profiles)
                 try:
                     if channel == "sound":
                         self.service.deliver_sound()
                     else:
-                        self.service.deliver_desktop(alert, kind, profile.name)
+                        self.service.deliver_desktop(alert, kind, names)
                 except Exception as error:
-                    self.history.receipt(alert["id"], version, profile_id, channel, error)
-                    errors.append(f"{profile.name} {channel}: {error}")
+                    self.history.combined_receipt(alert_id, version, channel, profiles, error)
+                    errors.append(f"{names} {channel}: {error}")
                 else:
-                    self.history.receipt(alert["id"], version, profile_id, channel)
+                    self.history.combined_receipt(alert_id, version, channel, profiles)
         return errors
 
     def delivered(self, errors):
         self.delivery_busy = False
-        self.delivery_panel.refresh()
+        self.refresh_records()
         if not errors:
             self.status.set("Notification check complete · See Delivery for channel results.")
         if errors:
@@ -473,7 +494,7 @@ class StormwatchApp:
         if not fresh or not current or current["version"] != row["version"] or current["status"] not in ("Active", "Cancelled"):
             self.status.set("Only current notifications with fresh live data can be retried. Wait for a successful refresh.")
             return
-        if not profile or not profile.matches(row["alert"]) or not getattr(profile, row["channel"]):
+        if not profile or not profile.matches(row["alert"]) or not profile.allows(row["alert"], row["channel"]):
             self.status.set("This notification channel is disabled or no longer matches an enabled location.")
             return
         if not receipt or receipt["state"] != "failed":
@@ -513,8 +534,12 @@ class StormwatchApp:
         self.active_count.set(f"{len(rows)} active alerts · {sum(p.enabled for p in self.profiles)} enabled locations")
         self.cards.render(rows)
         self.map.render(rows, self.profiles)
-        if hasattr(self, "delivery_panel"):
-            self.delivery_panel.refresh()
+        if hasattr(self, "history_panel"):
+            self.refresh_records()
+
+    def refresh_records(self):
+        self.delivery_panel.refresh()
+        self.history_panel.refresh()
 
     def update_health(self):
         now = datetime.now(timezone.utc)
@@ -656,6 +681,7 @@ class StormwatchApp:
             except Exception:
                 pass
         self.demo.close()
+        self.history_panel.close()
         with self.sound_lock:
             self.service.session.close()
             pygame.mixer.quit()

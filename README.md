@@ -55,8 +55,28 @@ selecting a profile in the sidebar changes which profile you are editing.
 **Event types** applies to the selected location. **Select all** and **Clear**
 change that location's event list. Additional event types discovered in active
 NWS data appear unchecked. Preferences persist and apply on the next refresh.
-An alert matching multiple profiles has separate notification receipts for each
-profile, so overlapping profiles may each notify.
+An alert matching multiple locations is combined into one sound submission and
+one desktop submission per alert version. The desktop notification lists the
+locations whose rules allow that channel; cards, the feed, and history list all
+matching enabled locations. Location receipts remain separate for troubleshooting.
+Adding another overlapping location later does not replay a channel already
+submitted for that version. A new meaningful alert version can notify again.
+
+## Watch / warning notification rules
+
+The location wizard and **Edit** include **Watch / warning rules**. For example,
+leave the sound/desktop master switches enabled, check sound for warnings, uncheck
+sound for watches, and keep desktop notifications checked for both. Each location
+has its own four rules: warning sound, warning desktop, watch sound, and watch
+desktop. The sidebar summarizes the selected location's effective rules.
+
+These categories use the NWS event's Watch/Warning designation, not the separate
+NWS severity field. Event-type selections still determine what is monitored;
+turning off notification channels does not hide matching cards or history.
+Sound/desktop master switches override the category rules. Existing profiles
+retain their previous behavior until edited. Rules apply on the next refresh;
+turning a channel off also prevents its queued or failed submissions from retrying.
+Cancellations and expired versions remain silent regardless of warning rules.
 
 ## Active alerts, lifecycle, and map
 
@@ -103,7 +123,8 @@ The previous ID-only behavior has been replaced by per-version records:
 - Feed display, sound submission, and desktop submission are recorded separately.
   A desktop failure does not replay a sound that was already submitted
   successfully, and vice versa. Failed channels retry on subsequent successful
-  refreshes, up to three attempts per profile/version/channel. Disabling a
+  refreshes, up to three shared attempts per alert version/channel, regardless
+  of the number of overlapping locations. Disabling a
   location or channel stops further delivery for it.
 - The first successful refresh quietly populates non-tornado/hurricane alerts.
   Unseen tornado/hurricane watches and warnings also notify on that first
@@ -120,25 +141,63 @@ are retained as quiet baselines because old delivery outcomes are unknown;
 new versions can still notify. Data and profiles live under
 `%LOCALAPPDATA%/Stormwatch/processed-alerts.sqlite3` on Windows, or
 `$XDG_STATE_HOME/Stormwatch/processed-alerts.sqlite3` elsewhere (default:
-`~/.local/state/Stormwatch/processed-alerts.sqlite3`). Back up this file to
-preserve profiles and history. The feed is a current-session view; searchable
-history/CSV export are future work.
+`~/.local/state/Stormwatch/processed-alerts.sqlite3`). Close Stormwatch before
+backup; copy the database and any remaining `-wal`/`-shm` companion files together
+as one set. Do not discard those companions. The feed
+is a current-session view; the **History** tab retains previous alert changes.
+
+## Searchable history and CSV export
+
+**History** provides a paginated archive of alert versions and lifecycle changes.
+Search across event names, headlines, areas, descriptions, and instructions.
+Filter by recorded location name, exact event type, change (new, updated,
+extended, cancelled, expired, or no longer active), date range, and latest
+channel result (submitted, failed, pending, suppressed, or no notifications).
+Use **Search** to apply filters and **Clear filters** to reset them. Delivery
+results reflect current receipts, not a log of every individual retry.
+
+Dates are inclusive local-calendar dates entered as `YYYY-MM-DD`. New entries
+use the time Stormwatch observed the change. Each version retains location names
+as they were first associated with that version; renaming or removing a profile
+does not erase those associations. Clearing the feed does not clear history.
+Cancelling a referenced alert can produce both a cancellation-message record
+and a lifecycle record for the original alert.
+
+On upgrade, existing saved versions are imported once. Older storage did not
+retain observation times, so imported rows use the NWS issue time when available,
+explicitly labeled **imported**; unknown timestamps remain **Not recorded** and
+are excluded by date filters. Old location names can only be recovered from
+available receipts/current profiles. Earlier status-only transitions may not
+have separate historical records; the latest alert status remains visible.
+Legacy ID-only records have no alert text to import. No history is fabricated.
+
+**Export matching CSV** saves every entry matching the applied filters, across
+all pages. It exports a consistent read snapshot while monitoring continues.
+Columns include alert ID, version, change, time/basis, event, locations, area,
+severity, issue/expiration times, current status, channel results, headline,
+instructions, and official URL. Files use UTF-8 with a BOM for spreadsheet
+compatibility. Text that could be interpreted as a spreadsheet formula is
+escaped. Export cancellation writes nothing; failures preserve an existing
+export. Export cannot overwrite the application database.
 
 ## Notification delivery panel
 
 The **Delivery** tab lists sound and desktop channel records separately, with
 pagination and a **Failed only** filter. Select a row to inspect the location,
 alert version, feed logging state, scheduled time, last-attempt time, attempt
-count, suppression reason, and the last reported error. Results distinguish
+count, shared-submission/location information, suppression reason, and the last reported error. Results distinguish
 pending, submitted, suppressed, paused, no longer current, failed, and exhausted
 retries. Older records without timestamps show **Not recorded**.
 
 **Retry selected failed channel once** performs one explicit retry, including
-when its three automatic attempts were exhausted. It preserves the attempt
-count and leaves successful channels alone. Live retries require monitoring to
+when its three automatic attempts were exhausted. It retries the shared channel
+once for eligible matching locations, preserves the shared attempt count, and
+leaves successful channels alone. Live retries require monitoring to
 be running, fresh data, a still-current alert version, and an enabled matching
 location/channel. Old, expired, disabled, and already-successful channels cannot
 be replayed from this panel. Manual attempts do not reset the automatic budget.
+Older receipt budgets are migrated conservatively using the largest existing
+channel attempt count; any prior successful submission suppresses duplicates.
 Submission results still cannot prove that a person saw or heard a notification.
 
 ## Demo mode
@@ -202,9 +261,10 @@ are explicitly skipped. For headless runs, use a virtual X server and
 `SDL_AUDIODRIVER=dummy`. Tests cover profiles, geographic matching, alert
 versions, lifecycle transitions, channel-specific retries, migration, card
 pagination, map interaction, tray failure handling, guided location setup,
-delivery-panel retries, and simulation isolation. Windows Run-entry and
+delivery-panel retries, simulation isolation, shared overlap submissions,
+watch/warning rules, history filters, and full snapshot CSV export. Windows Run-entry and
 notification submission paths are mocked on Linux; actual Windows tray/toast
 behavior still needs verification on Windows.
 
-Forecasts, text-to-speech, full notification rule editors, and searchable history
+Forecasts, text-to-speech, and individual event/severity-level rule editors
 are not part of this release.

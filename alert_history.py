@@ -8,6 +8,7 @@ import sqlite3
 import threading
 
 from locations import LocationProfile
+from history_store import HistoryArchive
 
 
 def instant(value):
@@ -26,7 +27,7 @@ def version_of(alert):
     return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
 
 
-class AlertHistory:
+class AlertHistory(HistoryArchive):
     def __init__(self, path=None):
         if path is None:
             root = Path(os.environ.get("LOCALAPPDATA") or os.environ.get("XDG_STATE_HOME") or Path.home() / ".local" / "state")
@@ -36,9 +37,13 @@ class AlertHistory:
         self.lock = threading.RLock()
         self.connection = sqlite3.connect(self.path, check_same_thread=False)
         self.connection.row_factory = sqlite3.Row
+        self.connection.execute("PRAGMA journal_mode=WAL")
         self.connection.executescript('''
             CREATE TABLE IF NOT EXISTS processed_alerts (id TEXT PRIMARY KEY, processed_at TEXT DEFAULT CURRENT_TIMESTAMP);
             CREATE TABLE IF NOT EXISTS settings (name TEXT PRIMARY KEY, data TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS channel_submissions (id TEXT, version TEXT, channel TEXT,
+                state TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, error TEXT DEFAULT '',
+                last_attempt TEXT DEFAULT '', members TEXT DEFAULT '[]', PRIMARY KEY(id,version,channel));
             CREATE TABLE IF NOT EXISTS profiles (id TEXT PRIMARY KEY, data TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS alerts (id TEXT PRIMARY KEY, version TEXT, data TEXT NOT NULL,
                 status TEXT NOT NULL, updated TEXT NOT NULL);
@@ -53,6 +58,7 @@ class AlertHistory:
             if name not in columns:
                 self.connection.execute(f"ALTER TABLE deliveries ADD COLUMN {name} TEXT NOT NULL DEFAULT ''")
         self.connection.commit()
+        self._initialize_archive()
 
     def claim(self, alert_id):
         """Retained for compatibility with the original ID-only store."""
@@ -82,7 +88,7 @@ class AlertHistory:
         with self.lock, self.connection:
             self.connection.execute("DELETE FROM profiles WHERE id=?", (profile_id,))
 
-    def observe(self, alert, now=None):
+    def observe(self, alert, now=None, locations=None):
         now = now or datetime.now(timezone.utc)
         version = version_of(alert)
         data = json.dumps(alert)
@@ -115,6 +121,7 @@ class AlertHistory:
             self.connection.execute("INSERT OR IGNORE INTO versions (id, version, kind, data) VALUES (?, ?, ?, ?)",
                                     (alert["id"], version, kind, data))
             kind = self.connection.execute("SELECT kind FROM versions WHERE id=? AND version=?", (alert["id"], version)).fetchone()[0]
+            self._archive_event(alert, version, kind, locations, now.astimezone(timezone.utc).isoformat())
             # Migrate ID-only history as a quiet baseline. Later versions notify.
             legacy = old is None and self.connection.execute("SELECT 1 FROM processed_alerts WHERE id=?", (alert["id"],)).fetchone()
             if legacy:
@@ -146,6 +153,57 @@ class AlertHistory:
             self.connection.execute("UPDATE deliveries SET state=?, attempts=attempts+1, error=?, last_attempt=? WHERE id=? AND version=? AND profile=? AND channel=?",
                                     ("failed" if error else "sent", str(error or ""), datetime.now(timezone.utc).isoformat(),
                                      alert_id, version, profile, channel))
+
+    def submission(self, alert_id, version, channel):
+        """Shared result for one alert version/channel, importing older receipts lazily."""
+        with self.lock, self.connection:
+            row = self.connection.execute("SELECT * FROM channel_submissions WHERE id=? AND version=? AND channel=?",
+                                          (alert_id, version, channel)).fetchone()
+            if row:
+                return dict(row)
+            receipts = self.connection.execute("SELECT * FROM deliveries WHERE id=? AND version=? AND channel=? AND state!='skipped'",
+                                               (alert_id, version, channel)).fetchall()
+            sent = next((r for r in receipts if r["state"] == "sent"), None)
+            attempts = max((r["attempts"] for r in receipts), default=0)
+            state = "sent" if sent else "failed" if attempts else "pending"
+            latest = sent or max(receipts, key=lambda r: r["last_attempt"], default=None)
+            imported_names = []
+            for receipt in receipts:
+                if receipt["state"] == "sent":
+                    profile = self.connection.execute("SELECT data FROM profiles WHERE id=?", (receipt["profile"],)).fetchone()
+                    if profile:
+                        imported_names.append(json.loads(profile[0])["name"])
+            self.connection.execute("INSERT INTO channel_submissions VALUES (?,?,?,?,?,?,?,?)",
+                (alert_id, version, channel, state, attempts, latest["error"] if latest else "",
+                 latest["last_attempt"] if latest else "", json.dumps(imported_names)))
+            return dict(self.connection.execute("SELECT * FROM channel_submissions WHERE id=? AND version=? AND channel=?",
+                                               (alert_id, version, channel)).fetchone())
+
+    def share_submission(self, alert_id, version, channel, profiles, submission):
+        """Cover a new overlapping location without repeating an earlier submission."""
+        names = ", ".join(json.loads(submission["members"])) or "an earlier matching location"
+        reason = f"Shared {channel} result for this alert version; earlier submission: {names}. No duplicate notification."
+        with self.lock, self.connection:
+            for profile in profiles:
+                self.connection.execute("""UPDATE deliveries SET state=?, attempts=?, error=?, last_attempt=?, reason=?
+                    WHERE id=? AND version=? AND profile=? AND channel=? AND state IN ('pending','failed')""",
+                    (submission["state"], submission["attempts"], submission["error"], submission["last_attempt"], reason,
+                     alert_id, version, profile.id, channel))
+
+    def combined_receipt(self, alert_id, version, channel, profiles, error=None):
+        prior = self.submission(alert_id, version, channel)
+        attempts = prior["attempts"] + 1
+        names = [p.name for p in profiles]
+        stamp = datetime.now(timezone.utc).isoformat()
+        state = "failed" if error else "sent"
+        reason = "Combined notification for " + ", ".join(names) if len(names) > 1 else "Notification for " + names[0]
+        with self.lock, self.connection:
+            self.connection.execute("UPDATE channel_submissions SET state=?,attempts=?,error=?,last_attempt=?,members=? WHERE id=? AND version=? AND channel=?",
+                (state, attempts, str(error or ""), stamp, json.dumps(names), alert_id, version, channel))
+            for profile in profiles:
+                self.connection.execute("""UPDATE deliveries SET state=?,attempts=?,error=?,last_attempt=?,reason=?
+                    WHERE id=? AND version=? AND profile=? AND channel=?""",
+                    (state, attempts, str(error or ""), stamp, reason, alert_id, version, profile.id, channel))
 
     def is_current(self, alert_id, version):
         with self.lock:
@@ -189,6 +247,7 @@ class AlertHistory:
                 status = "Expired" if end and end <= now else "No longer active" if row["id"] not in current_ids else None
                 if status:
                     self.connection.execute("UPDATE alerts SET status=? WHERE id=?", (status, row["id"]))
+                    self._archive_event(row["alert"], row["version"], status, stamp=now.astimezone(timezone.utc).isoformat())
                     changes.append((row["alert"], status))
         return changes
 
@@ -197,9 +256,10 @@ class AlertHistory:
         with self.lock, self.connection:
             for ref in alert.get("references", []):
                 alert_id = ref.get("identifier") or ref.get("id") if isinstance(ref, dict) else ref
-                row = self.connection.execute("SELECT data FROM alerts WHERE id=? AND status='Active'", (alert_id,)).fetchone()
+                row = self.connection.execute("SELECT data,version FROM alerts WHERE id=? AND status='Active'", (alert_id,)).fetchone()
                 if row:
                     self.connection.execute("UPDATE alerts SET status='Cancelled' WHERE id=?", (alert_id,))
+                    self._archive_event(json.loads(row["data"]), row["version"], "Cancelled")
                     changed.append((json.loads(row[0]), "Cancelled"))
         return changed
 

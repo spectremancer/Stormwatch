@@ -4,6 +4,7 @@ from tkinter import ttk
 
 from TkFlow import Button, Checkbox, Label, TextArea
 from TkFlow.widget import Widget
+from locations import LocationProfile
 
 
 def delivery_status(row, running=True, automatic=True):
@@ -15,7 +16,7 @@ def delivery_status(row, running=True, automatic=True):
     if state == 'failed' and row['attempts'] >= 3:
         return 'Failed · retries exhausted'
     profile = row.get('location', {})
-    if not profile or not profile.get('enabled', True) or not profile.get(row['channel'], False):
+    if not profile or not profile.get('enabled', True) or not LocationProfile(**profile).allows(row.get('alert', {}), row['channel']):
         return 'Paused by preferences'
     if row.get('current_version') != row['version'] or row.get('alert_status') not in ('Active', 'Cancelled'):
         return 'No longer current'
@@ -71,7 +72,7 @@ class DeliveryPanel:
         if compact:
             self.counter.hide()
         self.table = DeliveryTable(parent, self.selected)
-        self.details = TextArea(parent, readonly=True, height=2 if compact else 7, bg='#101c30', fg='#e5edf8', padx=12, pady=10)
+        self.details = TextArea(parent, readonly=True, autoscroll=False, height=2 if compact else 7, bg='#101c30', fg='#e5edf8', padx=12, pady=10)
         self.retry_button = Button(actions if compact else parent,
                                    'Retry channel once' if compact else 'Retry selected failed channel once', self.retry_selected)
         self.refresh()
@@ -127,7 +128,7 @@ class DeliveryPanel:
             f"{row['location'].get('name', 'Removed location')} · {row['channel'].title()} · {delivery_status(row, self.running(), self.automatic)}\n"
             f"Alert version: {row['version'][:12]} · Feed: {'logged' if row.get('displayed') else 'not logged'}\n"
             f"Scheduled: {local_time(row.get('scheduled_at'))} · Last attempt: {local_time(row.get('last_attempt'))}\n"
-            f"Attempts: {row['attempts']} (automatic limit: 3; manual retry adds one attempt)\n"
+            f"Shared channel attempts: {row['attempts']} (automatic limit: 3; manual retry adds one attempt)\n"
             f"{row.get('reason') or ''}\n{('Last error: ' + row['error']) if row.get('error') else 'No reported error.'}")
 
     def retry_selected(self):
