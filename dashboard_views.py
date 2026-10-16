@@ -106,7 +106,7 @@ class Cards(Widget):
             card = tk.Frame(self.body, background=PANEL, padx=16, pady=12, highlightthickness=1,
                             highlightbackground="#243a56")
             card.pack(fill="x", pady=(0, 10))
-            tk.Label(card, text=alert["event"], bg=PANEL, fg=color,
+            tk.Label(card, text=("SIMULATION · " if alert.get("simulated") else "") + alert["event"], bg=PANEL, fg=color,
                      font=(tkfont.nametofont("TkDefaultFont").actual("family"), 13, "bold"), anchor="w").pack(fill="x")
             tk.Label(card, text=" · ".join(row.get("locations", [])), bg=PANEL, fg=MUTED,
                      anchor="w").pack(fill="x", pady=(4, 0))
@@ -127,11 +127,13 @@ class Cards(Widget):
 
 class AlertMap(Widget):
     """Pan/zoom longitude/latitude map; no API key or remote tile requests."""
-    def __init__(self, parent, open_alert):
+    def __init__(self, parent, open_alert, on_point=None):
+        self.on_point = on_point
         self.canvas = tk.Canvas(parent.widget, background="#101c30", highlightthickness=0, height=400)
         self._attach(parent, self.canvas, expand=True, fill="both")
         self.open_alert = open_alert
         self.rows, self.profiles = [], []
+        self.place_labels = []
         self.center = (-98.0, 39.0)
         self.scale = 8.0
         self.drag = None
@@ -184,6 +186,10 @@ class AlertMap(Widget):
 
     def release(self, event):
         if self.drag and abs(event.x - self.drag[0]) + abs(event.y - self.drag[1]) < 5:
+            if self.on_point is not None:
+                lon = self.center[0] + (event.x - self.canvas.winfo_width() / 2) / self.scale
+                lat = self.center[1] - (event.y - self.canvas.winfo_height() / 2) / self.scale
+                self.on_point(lat, lon)
             for item in reversed(self.canvas.find_overlapping(event.x-2, event.y-2, event.x+2, event.y+2)):
                 if item in self.items:
                     self.open_alert(self.items[item])
@@ -227,11 +233,18 @@ class AlertMap(Widget):
                         item = c.create_polygon(coords, fill="", width=2,
                                                 outline="#ffbc87" if alert["event"].endswith("Warning") else "#85caff")
                         self.items[item] = alert
+        labels = [self.project(p.longitude, p.latitude) for p in self.profiles if p.latitude is not None]
+        for place in self.place_labels:
+            x, y = self.project(place.longitude, place.latitude)
+            if 10 < x < w - 100 and 60 < y < h - 25 and all(abs(x-px) > 90 or abs(y-py) > 26 for px, py in labels):
+                c.create_oval(x-2, y-2, x+2, y+2, fill="#9aaec7", outline="")
+                c.create_text(x+5, y, text=place.city, fill="#9aaec7", anchor="w")
+                labels.append((x,y))
         for p in self.profiles:
             if p.enabled and p.latitude is not None:
                 x, y = self.project(p.longitude, p.latitude)
                 c.create_oval(x-5, y-5, x+5, y+5, fill="#7ce3bf", outline=TEXT)
                 c.create_text(x+9, y, text=p.name, fill=TEXT, anchor="w")
         c.create_rectangle(0, 0, w, 48, fill="#101c30", outline="")
-        c.create_text(14, 12, text="NWS boundaries · Orange: warning / Blue: watch · Green: saved location", fill=TEXT, anchor="w")
-        c.create_text(14, 32, text=f"Drag to pan · Scroll or use +/− to zoom · Click an outline for details · {missing} alerts have no polygon", fill=MUTED, anchor="w")
+        c.create_text(14, 12, text="Confirm your location · Green: approximate pin · Gray: nearby places" if self.on_point else "SIMULATION · Sample boundaries · No real weather threat" if any(row["alert"].get("simulated") for row in self.rows) else "NWS boundaries · Orange: warning / Blue: watch · Green: saved location", fill=TEXT, anchor="w")
+        c.create_text(14, 32, text="Drag to pan · Scroll to zoom · Click the map to move the pin" if self.on_point else f"Drag to pan · Scroll or use +/− to zoom · Click an outline for details · {missing} alerts have no polygon", fill=MUTED, anchor="w")

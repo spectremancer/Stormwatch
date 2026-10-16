@@ -20,10 +20,26 @@ Linux may require `python3-tk` and desktop notification tools such as
 
 ## Saved locations
 
-Use **Add** to create Home, Family, Work, or other named profiles. Each profile
-saves its own event selections, enabled state, sound preference, and desktop
-notification preference. All enabled profiles monitor together; selecting a
-profile in the sidebar changes which profile you are editing.
+Use **Add** for a three-step guided setup:
+
+1. Search the offline city/ZIP catalog (examples: `Chicago, IL`, `Springfield Illinois`,
+   or `60601`). Choose one of the labeled city/state/ZIP results.
+2. Confirm the approximate pin on the offline map. Nearby place labels provide
+   geographic context. Click to adjust the pin, drag to pan, and scroll to zoom.
+3. Name the location Home, Family, Work, or something else; choose event types and
+   sound/desktop preferences. Saving resolves the pin's official NWS zones.
+
+Searches stay on your device and require no API key. The bundled catalog contains
+40,970 postal-place entries, not street addresses or a complete/current postal
+registry. ZIP/city pins represent areas, **not an exact home address**. Missing
+places can be entered through **Advanced location editor…**, which also supports
+state-wide and county-wide profiles. A failed NWS lookup saves no partial profile.
+Data attribution and coverage details are in [data/README.md](data/README.md).
+
+Each profile saves its own event selections, enabled state, sound preference,
+and desktop notification preference. All enabled profiles monitor together;
+selecting a profile in the sidebar changes which profile you are editing.
+**Edit** opens the advanced editor for existing locations:
 
 - **States:** enter two-letter codes, such as `IL, IN`.
 - **Counties:** enter state codes first and use **Choose counties** to select
@@ -108,6 +124,49 @@ new versions can still notify. Data and profiles live under
 preserve profiles and history. The feed is a current-session view; searchable
 history/CSV export are future work.
 
+## Notification delivery panel
+
+The **Delivery** tab lists sound and desktop channel records separately, with
+pagination and a **Failed only** filter. Select a row to inspect the location,
+alert version, feed logging state, scheduled time, last-attempt time, attempt
+count, suppression reason, and the last reported error. Results distinguish
+pending, submitted, suppressed, paused, no longer current, failed, and exhausted
+retries. Older records without timestamps show **Not recorded**.
+
+**Retry selected failed channel once** performs one explicit retry, including
+when its three automatic attempts were exhausted. It preserves the attempt
+count and leaves successful channels alone. Live retries require monitoring to
+be running, fresh data, a still-current alert version, and an enabled matching
+location/channel. Old, expired, disabled, and already-successful channels cannot
+be replayed from this panel. Manual attempts do not reset the automatic budget.
+Submission results still cannot prove that a person saw or heard a notification.
+
+## Demo mode
+
+The **Demo** tab is an isolated simulation that can run alongside live monitoring.
+Choose a scenario and press **Run simulation** to preview a new warning, update,
+extension, cancellation, expiration, connection failure, or recovery. Sample
+cards, feed, map, and delivery results are labeled **SIMULATION**. Ending scenarios
+require a new/active sample warning first. Simulating a connection failure keeps
+sample cards visible and has no effect on the real connection.
+
+Real sample sound and desktop previews are **off by default**. Enable their
+checkboxes only when you want to use the actual audio device or OS notification
+API. Desktop previews explicitly use a `SIMULATION` title. Turning on a checkbox
+only affects subsequent scenarios/previews; it does not itself send anything.
+Preview submission failures can be retried manually in **Sample delivery** with
+the corresponding real-device preview enabled.
+
+**Simulate delivery failure** fabricates a successful sound record and a failed
+desktop record without using either device. Retrying that fabricated desktop
+record marks it successful without touching a device or replaying sound. This
+lets you explore error handling without real notifications. Demo channels do
+not automatically retry on live refreshes.
+
+Simulation data lives in a separate temporary database that is removed on clean
+shutdown. It never writes to live profiles, active alerts, notification receipts,
+or alert history. Demo data is not restored after restart.
+
 ## Background monitoring and connection health
 
 **Minimize to tray** hides the window only after a tray icon becomes available.
@@ -142,9 +201,10 @@ GUI integration tests require a display (`DISPLAY` on Linux); otherwise they
 are explicitly skipped. For headless runs, use a virtual X server and
 `SDL_AUDIODRIVER=dummy`. Tests cover profiles, geographic matching, alert
 versions, lifecycle transitions, channel-specific retries, migration, card
-pagination, map interaction, and tray failure handling. Windows Run-entry and
+pagination, map interaction, tray failure handling, guided location setup,
+delivery-panel retries, and simulation isolation. Windows Run-entry and
 notification submission paths are mocked on Linux; actual Windows tray/toast
 behavior still needs verification on Windows.
 
-Forecasts, text-to-speech, full notification rule editors, searchable history,
-and a user-facing demo mode are not part of this release.
+Forecasts, text-to-speech, full notification rule editors, and searchable history
+are not part of this release.

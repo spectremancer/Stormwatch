@@ -48,6 +48,10 @@ class AlertHistory:
                 state TEXT DEFAULT 'pending', attempts INTEGER DEFAULT 0, error TEXT DEFAULT '',
                 PRIMARY KEY(id, version, profile, channel));
         ''')
+        columns = {row[1] for row in self.connection.execute("PRAGMA table_info(deliveries)")}
+        for name in ("scheduled_at", "last_attempt", "reason"):
+            if name not in columns:
+                self.connection.execute(f"ALTER TABLE deliveries ADD COLUMN {name} TEXT NOT NULL DEFAULT ''")
         self.connection.commit()
 
     def claim(self, alert_id):
@@ -125,10 +129,11 @@ class AlertHistory:
         with self.lock, self.connection:
             self.connection.execute("UPDATE versions SET displayed=1 WHERE id=? AND version=?", (alert_id, version))
 
-    def schedule(self, alert_id, version, profile, channel, quiet=False):
+    def schedule(self, alert_id, version, profile, channel, quiet=False, reason=""):
         with self.lock, self.connection:
-            self.connection.execute("INSERT OR IGNORE INTO deliveries (id,version,profile,channel,state) VALUES (?,?,?,?,?)",
-                                    (alert_id, version, profile, channel, "skipped" if quiet else "pending"))
+            self.connection.execute("INSERT OR IGNORE INTO deliveries (id,version,profile,channel,state,scheduled_at,reason) VALUES (?,?,?,?,?,?,?)",
+                                    (alert_id, version, profile, channel, "skipped" if quiet else "pending",
+                                     datetime.now(timezone.utc).isoformat(), reason or ("Quiet startup or legacy baseline" if quiet else "")))
 
     def pending(self, alert_id, version, profile, channel):
         with self.lock:
@@ -138,8 +143,36 @@ class AlertHistory:
 
     def receipt(self, alert_id, version, profile, channel, error=None):
         with self.lock, self.connection:
-            self.connection.execute("UPDATE deliveries SET state=?, attempts=attempts+1, error=? WHERE id=? AND version=? AND profile=? AND channel=?",
-                                    ("failed" if error else "sent", str(error or ""), alert_id, version, profile, channel))
+            self.connection.execute("UPDATE deliveries SET state=?, attempts=attempts+1, error=?, last_attempt=? WHERE id=? AND version=? AND profile=? AND channel=?",
+                                    ("failed" if error else "sent", str(error or ""), datetime.now(timezone.utc).isoformat(),
+                                     alert_id, version, profile, channel))
+
+    def is_current(self, alert_id, version):
+        with self.lock:
+            row = self.connection.execute("SELECT version,status FROM alerts WHERE id=?", (alert_id,)).fetchone()
+            return bool(row and row["version"] == version and row["status"] in ("Active", "Cancelled"))
+
+    def delivery(self, alert_id, version, profile, channel):
+        with self.lock:
+            row = self.connection.execute("SELECT * FROM deliveries WHERE id=? AND version=? AND profile=? AND channel=?",
+                                          (alert_id, version, profile, channel)).fetchone()
+            return dict(row) if row else None
+
+    def delivery_count(self, failed_only=False):
+        with self.lock:
+            where = " WHERE state='failed'" if failed_only else ""
+            return self.connection.execute("SELECT count(*) FROM deliveries" + where).fetchone()[0]
+
+    def delivery_rows(self, limit=50, offset=0, failed_only=False):
+        with self.lock:
+            where = " WHERE d.state='failed'" if failed_only else ""
+            rows = self.connection.execute("""SELECT d.*, v.data AS alert_data, v.kind, v.displayed,
+                p.data AS profile_data, a.status AS alert_status, a.version AS current_version
+                FROM deliveries d LEFT JOIN versions v ON d.id=v.id AND d.version=v.version
+                LEFT JOIN profiles p ON d.profile=p.id LEFT JOIN alerts a ON d.id=a.id""" +
+                where + " ORDER BY d.rowid DESC LIMIT ? OFFSET ?", (limit, offset)).fetchall()
+            return [dict(row, alert=json.loads(row["alert_data"]) if row["alert_data"] else {},
+                         location=json.loads(row["profile_data"]) if row["profile_data"] else {}) for row in rows]
 
     def rows(self, active_only=False):
         with self.lock:

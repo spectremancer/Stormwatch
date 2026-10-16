@@ -16,6 +16,9 @@ from WeatherService import WeatherService
 from alert_history import AlertHistory, instant
 from dashboard_views import AlertMap, Cards, Tabs
 from desktop import Tray, set_login
+from location_wizard import LocationWizard
+from delivery_panel import DeliveryPanel
+from demo import DemoPanel
 from locations import LocationProfile
 
 EVENT_FAMILIES = (
@@ -71,7 +74,7 @@ class StormwatchApp:
                                        on_change=self.choose_profile)
         self.location_summary = Label(controls, self.profile.summary(), style="Muted.TLabel", wraplength=290)
         buttons = controls.row(padding=0)
-        Button(buttons, "Add", lambda: self.edit_profile(new=True))
+        Button(buttons, "Add", self.add_location)
         Button(buttons, "Edit", self.edit_profile)
         Button(buttons, "Remove", self.remove_profile)
         Label(controls, "All enabled locations monitor together.", style="Muted.TLabel")
@@ -123,6 +126,12 @@ class StormwatchApp:
         Label(map_page, "Offline map · Storm polygons or NWS affected-zone outlines; missing boundaries remain in Active alerts.\n"
               "Coordinate matching uses the polygon when available, otherwise the resolved NWS county/forecast zones.",
               style="Muted.TLabel", wraplength=740)
+        delivery_page = self.tabs.page("Delivery")
+        self.delivery_panel = DeliveryPanel(delivery_page, self.history, self.retry_delivery, lambda: self.running)
+        demo_page = self.tabs.page("Demo")
+        self.demo = DemoPanel(demo_page, self)
+        self.location_wizard = None
+        self.tabs.widget.bind("<<NotebookTabChanged>>", lambda _: self.delivery_panel.refresh())
         self.status = Label(self.app, "Ready • Choose locations and start monitoring.", style="Muted.TLabel", wraplength=1180)
         self.tray = Tray(self.app, self.show_window, self.close, self.on_tray_ready, self.tray_failed)
         self.app.root.protocol("WM_DELETE_WINDOW", self.window_closed)
@@ -137,6 +146,9 @@ class StormwatchApp:
                   foreground=[("selected", "#ffffff"), ("active", "#ffffff")])
         style.configure("TCombobox", fieldbackground="#142238", background="#243a56", foreground="#e5edf8")
         style.map("TCombobox", fieldbackground=[("readonly", "#142238")], foreground=[("readonly", "#e5edf8")])
+        style.configure("Treeview", background="#101c30", fieldbackground="#101c30", foreground="#e5edf8", rowheight=28)
+        style.configure("Treeview.Heading", background="#243a56", foreground="#e5edf8", padding=8)
+        style.map("Treeview", background=[("selected", "#176caa")], foreground=[("selected", "#ffffff")])
         style.configure("TFrame", background="#0b1424")
         style.configure("Panel.TFrame", background="#142238")
         style.configure("TLabel", background="#0b1424")
@@ -191,6 +203,12 @@ class StormwatchApp:
         self.profile_picker.set(self.profile.name)
         self.choose_profile(self.profile.name)
         self.render_active()
+
+    def add_location(self):
+        if self.location_wizard and not self.location_wizard.window._closed:
+            self.location_wizard.window.root.lift()
+        else:
+            self.location_wizard = LocationWizard(self)
 
     def edit_profile(self, new=False):
         profile = LocationProfile(name="New location") if new else replace(self.profile)
@@ -308,6 +326,7 @@ class StormwatchApp:
             self.state.set("●  MONITORING")
             self.poll()
         self.update_health()
+        self.delivery_panel.refresh()
 
     def poll(self):
         self.timer = None
@@ -397,17 +416,24 @@ class StormwatchApp:
         self.status.set(warning or "Alerts are current • Monitoring all enabled locations.")
         self.update_health()
 
-    def send_notifications(self, generation, jobs):
+    def send_notifications(self, generation, jobs, manual=False):
         errors = []
         for alert, version, profile_id, channel, kind in jobs:
             profile = next((p for p in self.profiles if p.id == profile_id), None)
             if not profile or not profile.matches(alert) or not getattr(profile, channel):
                 continue
-            if not self.history.pending(alert["id"], version, profile_id, channel):
+            key = (alert["id"], version, profile_id, channel)
+            receipt = self.history.delivery(*key)
+            if not receipt or (receipt["state"] != "failed" if manual else not self.history.pending(*key)):
                 continue
             with self.sound_lock:
                 if not self.running or generation != self.generation:
                     break
+                if not self.history.is_current(alert["id"], version):
+                    continue
+                end = instant(alert.get("ends") or alert.get("expires"))
+                if end and end <= datetime.now(timezone.utc) and kind != "Cancelled":
+                    continue
                 try:
                     if channel == "sound":
                         self.service.deliver_sound()
@@ -422,12 +448,42 @@ class StormwatchApp:
 
     def delivered(self, errors):
         self.delivery_busy = False
+        self.delivery_panel.refresh()
+        if not errors:
+            self.status.set("Notification check complete · See Delivery for channel results.")
         if errors:
-            self.status.set("Notification delivery failed; retrying up to 3 times on refresh. " + errors[0])
+            self.status.set("Notification submission failed · See Delivery for remaining retries. " + errors[0])
 
     def delivery_failed(self, error):
         self.delivery_busy = False
+        self.delivery_panel.refresh()
         self.status.set(f"Notification worker failed: {error}")
+
+    def retry_delivery(self, row):
+        if not self.running:
+            self.status.set("Start monitoring before retrying a live notification channel.")
+            return
+        if self.delivery_busy:
+            self.status.set("A notification submission is already in progress. Try again when it finishes.")
+            return
+        fresh = self.last_success and not self.last_error and (datetime.now(timezone.utc) - self.last_success).total_seconds() < max(120, self.service.interval * 2)
+        current = next((r for r in self.history.rows() if r["id"] == row["id"]), None)
+        profile = next((p for p in self.profiles if p.id == row["profile"]), None)
+        receipt = self.history.delivery(row["id"], row["version"], row["profile"], row["channel"])
+        if not fresh or not current or current["version"] != row["version"] or current["status"] not in ("Active", "Cancelled"):
+            self.status.set("Only current notifications with fresh live data can be retried. Wait for a successful refresh.")
+            return
+        if not profile or not profile.matches(row["alert"]) or not getattr(profile, row["channel"]):
+            self.status.set("This notification channel is disabled or no longer matches an enabled location.")
+            return
+        if not receipt or receipt["state"] != "failed":
+            self.status.set("Only failed channels can be retried; successful submissions will not be replayed.")
+            return
+        self.delivery_busy = True
+        self.status.set(f"Retrying {row['channel']} once for {profile.name}…")
+        self.delivery_future = self.app.run_in_thread(self.send_notifications, self.generation,
+            [(row["alert"], row["version"], profile.id, row["channel"], row["kind"])], True,
+            on_result=self.delivered, on_error=self.delivery_failed)
 
     def failed(self, generation, error):
         self.busy = False
@@ -457,6 +513,8 @@ class StormwatchApp:
         self.active_count.set(f"{len(rows)} active alerts · {sum(p.enabled for p in self.profiles)} enabled locations")
         self.cards.render(rows)
         self.map.render(rows, self.profiles)
+        if hasattr(self, "delivery_panel"):
+            self.delivery_panel.refresh()
 
     def update_health(self):
         now = datetime.now(timezone.utc)
@@ -480,6 +538,7 @@ class StormwatchApp:
         if self.app._closed:
             return
         self.cards.tick()
+        self.demo.tick()
         self.update_health()
         # An elapsed expiration can be determined locally, even while offline.
         active_ids = {row["id"] for row in self.history.rows(active_only=True)}
@@ -502,8 +561,9 @@ class StormwatchApp:
         self.feed.append(f"Expires: {alert['expires']}\n{alert['url']}\n\n{'─' * 45}\n\n", tag="meta")
 
     def open_alert(self, alert):
-        window = Window(self.app, alert["event"], width=740, height=630)
-        Label(window, alert["event"], style="Heading.TLabel")
+        title = ("SIMULATION · " if alert.get("simulated") else "") + alert["event"]
+        window = Window(self.app, title, width=740, height=630)
+        Label(window, title, style="Heading.TLabel")
         details = TextArea(window, readonly=True, expand=True, fill="both", bg="#101c30", fg="#e5edf8", padx=16, pady=12)
         details.set(f"{alert['headline']}\n\n{alert['area']}\n\nSeverity: {alert['severity']}\nIssued: {alert['sent']}\n"
                     f"Expires: {alert['expires']}\n\n{alert.get('description', '')}\n\n{alert['instruction']}")
@@ -595,6 +655,7 @@ class StormwatchApp:
                 self.delivery_future.result()
             except Exception:
                 pass
+        self.demo.close()
         with self.sound_lock:
             self.service.session.close()
             pygame.mixer.quit()
