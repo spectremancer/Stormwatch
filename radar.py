@@ -82,24 +82,31 @@ def tile_layout(view):
         zoom -= 1
 
 
-def parse_frames(payload, now=None):
-    """Accept only provider past-frame paths, bounded and ordered by observation."""
-    now = now or datetime.now(timezone.utc).timestamp()
-    if not isinstance(payload,dict) or str(payload.get('host','')).rstrip('/') != TILE_HOST:
+def image_host(payload):
+    """Use the API's host after checking the supported HTTPS tile origin."""
+    host = payload.get('host') if isinstance(payload,dict) else None
+    if not isinstance(host,str) or host.rstrip('/') != TILE_HOST:
         raise RadarError('The radar provider advertised an unsupported tile host. The provider response may have changed; update Stormwatch.')
+    return host.rstrip('/')
+
+
+def parse_frames(payload, now=None):
+    """Paths are opaque API values; time is frame generation time, not a path ID."""
+    now = datetime.now(timezone.utc).timestamp() if now is None else now
+    image_host(payload)
     radar = payload.get('radar')
     if not isinstance(radar,dict) or not isinstance(radar.get('past'),list):
-        raise RadarError('The radar metadata has no observed-frame list. The provider response may have changed; try again later or update Stormwatch.')
+        raise RadarError('The radar metadata has no past-frame list. The provider response may have changed; try again later or update Stormwatch.')
     frames = {}
     for frame in radar['past']:
         if not isinstance(frame,dict):
             continue
         stamp, path = frame.get('time'), frame.get('path','')
         if (type(stamp) is int and isinstance(path,str) and now-3*3600 <= stamp <= now+60
-                and re.fullmatch(r'/v2/radar/\d+',path)):
+                and re.fullmatch(r'/v2/radar/[A-Za-z0-9_-]+',path)):
             frames[stamp] = path
     if not frames:
-        raise RadarError('No radar observations from the last three hours are available. Check the system clock or try again later.')
+        raise RadarError('No radar frames generated in the last three hours are available. Check the system clock or try again later.')
     return sorted(frames.items())[-MAX_FRAMES:]
 
 
@@ -148,8 +155,10 @@ class RadarService:
         self.stop.set()
 
     def _tile(self, key):
-        path, zoom, x, y = key
-        data = _read(f'{TILE_HOST}{path}/256/{zoom}/{x}/{y}/2/1_1.png', 1024*1024, self.stop)
+        host, path, zoom, x, y = key
+        # Weather Maps API: {host}{path}/{size}/{z}/{x}/{y}/{color}/{smooth}_{snow}.png
+        # 2 = Universal Blue; 1_1 = smoothing on, separate snow colors on.
+        data = _read(f'{host}{path}/256/{zoom}/{x}/{y}/2/1_1.png', 1024*1024, self.stop)
         try:
             with Image.open(BytesIO(data)) as image:
                 if image.size != (256,256):
@@ -167,6 +176,7 @@ class RadarService:
         except (json.JSONDecodeError,UnicodeDecodeError):
             raise RadarError('The radar metadata was not valid JSON. A firewall or provider error page may have replaced the response.') from None
         frames = parse_frames(metadata)
+        host = image_host(metadata)
         zoom, x0, y0, x1, y1 = tile_layout(view)
         world = 256*2**zoom
         result = []
@@ -175,7 +185,7 @@ class RadarService:
             for stamp, path in frames:
                 if self.stop.is_set():
                     raise RuntimeError('Radar loading stopped.')
-                keys = [(path,zoom,x,y) for x in range(x0,x1+1) for y in range(y0,y1+1)]
+                keys = [(host,path,zoom,x,y) for x in range(x0,x1+1) for y in range(y0,y1+1)]
                 missing = [key for key in keys if key not in self.cache]
                 for key, image in zip(missing,pool.map(self._tile,missing)):
                     self.cache[key] = image
@@ -184,7 +194,7 @@ class RadarService:
                 mosaic = Image.new('RGBA',((x1-x0+1)*256,(y1-y0+1)*256))
                 for key in keys:
                     self.cache.move_to_end(key)
-                    mosaic.paste(self.cache[key],((key[2]-x0)*256,(key[3]-y0)*256))
+                    mosaic.paste(self.cache[key],((key[3]-x0)*256,(key[4]-y0)*256))
                 west, south, east, north = view.bounds()
                 # Pillow mesh reprojects Web Mercator tiles into this map's
                 # longitude/latitude grid; 8-pixel strips keep edges aligned.

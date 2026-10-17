@@ -183,14 +183,17 @@ In **Alert map**, enable **Show recent radar**. This opt-in overlay uses
 [RainViewer](https://www.rainviewer.com) observed precipitation imagery under
 the NWS alert boundaries and saved-location markers. Use **Play/Pause**,
 **Previous frame**, **Next frame**, and **Refresh radar**. The latest six available
-observed frames are loaded; no forecast radar frames are used. Each displayed
-frame shows its observation date/time in UTC, age, and sequence number. Blue/green
-through yellow/red indicates increasing precipitation intensity, not warning
-severity. Radar coverage can be incomplete; a blank area does not prove safety.
+past frames are loaded; no forecast radar frames are used. Each displayed
+frame shows its **generation time** in UTC, age, and sequence number. RainViewer
+explains that a composite frame contains readings from different observation
+times; its timestamp is not the observation time of every radar reading. The
+overlay uses the **Universal Blue** palette with smoothing and separate snow
+colors enabled. Radar colors represent reflectivity, not warning severity.
+Radar coverage can be incomplete; a blank area does not prove safety.
 
 Radar refreshes every five minutes while enabled and the map is visible. A
 failed refresh retains the last successful imagery with its original timestamp
-and marks it stale; imagery is also marked stale when the newest observation is
+and marks it stale; imagery is also marked stale when the newest frame was generated
 over 20 minutes old. Panning, zooming, or resizing hides the old overlay while
 the new view loads, so imagery cannot remain attached to the wrong coordinates.
 Playback pauses when leaving the map. Disabling radar clears the overlay and
@@ -206,11 +209,29 @@ monitoring and the offline map continue if radar is unavailable.
 Radar needs HTTPS access to `api.rainviewer.com` and `tilecache.rainviewer.com`.
 No API key is required by this integration; availability and usage remain
 subject to the provider's service and terms. RainViewer attribution links from
-the map. In the managed cloud environment, these domains have been saved in a
-network configuration draft; review/save and publish that configuration to
-enable live radar checks. Live provider access was blocked during development;
-rendering, projection, caching, playback, and failures were validated with
-controlled fixtures rather than live imagery.
+the map. The integration was checked against the official
+[Weather Maps API documentation](https://www.rainviewer.com/api/weather-maps-api.html)
+and [color scheme documentation](https://www.rainviewer.com/api/color-schemes.html).
+It requests `https://api.rainviewer.com/public/weather-maps.json`, reads
+`radar.past`, and builds tile URLs from the returned HTTPS `host` and each frame's
+`path`:
+
+```text
+{host}{path}/256/{z}/{x}/{y}/2/1_1.png
+```
+
+Paths are opaque identifiers. For example, the live API returned
+`/v2/radar/2e6b69161301`; the app preserves that value rather than deriving a path
+from the timestamp or requiring a numeric identifier. The API supplies roughly
+two hours of past frames at ten-minute intervals; Stormwatch displays the latest
+six. Tile size 256, zoom at most 7, color 2 (Universal Blue), and options 1_1
+(smoothing on, snow colors on) follow the documented parameters. The image host
+is validated against the supported RainViewer HTTPS origin before requesting.
+
+After the approved network settings took effect, live metadata and tile requests
+returned HTTP 200. The actual radar loader successfully downloaded and reprojected
+six nonempty frames using 24 tiles in a small test viewport. Regression fixtures
+also cover opaque frame paths and the exact documented request format.
 
 **Connection details** shows the last attempt and the full failure reason. The
 status under the map also reports the reason instead of only “Radar unavailable”:
@@ -222,7 +243,7 @@ status under the map also reports the reason instead of only “Radar unavailabl
 | HTTP 429 | Provider rate limit; wait a few minutes before retrying. |
 | TLS certificate validation failed | Check the system clock and trusted certificates. TLS verification stays enabled. |
 | Timed out / could not connect | Check internet access, DNS, firewall, and system proxy settings. |
-| No recent observations | Check the system clock or provider availability. |
+| No recent generated frames | Check the system clock or provider availability. |
 | Map too large | Resize the map to at most 1800 × 1200 pixels, then retry. |
 
 Supported HTTPS redirects between the two trusted RainViewer hosts are followed,
@@ -230,11 +251,10 @@ up to a bounded limit. Other redirect hosts, oversized responses, and invalid
 images/metadata are rejected with explanations. Raw proxy credentials and server
 response bodies are not included in connection diagnostics.
 
-Live checks in the managed cloud environment returned proxy CONNECT 403 for
-**both** RainViewer hosts while the active allowlist contained only weather.gov.
-This establishes a cloud network-policy blocker, not a RainViewer outage or the
-cause of a failure on another Windows machine. On Windows, use **Connection
-details** for the local reason. If running the checked-in executable, rebuild it
+Earlier cloud checks returned proxy CONNECT 403 before RainViewer access was
+activated. A separate application bug also rejected valid nonnumeric frame paths;
+that parsing bug is now corrected. On Windows, use **Connection details** for
+any remaining local connection failure. If running the checked-in executable, rebuild it
 from current source using `main.spec` to get these controls and diagnostics.
 
 ## Versions and delivery receipts

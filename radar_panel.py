@@ -30,7 +30,7 @@ class RadarPanel:
         self.status = Label(status_holder,'Radar off · Alert monitoring works independently.',style='Muted.TLabel',wraplength=740,expand=True,fill='both',anchor='nw')
         self.status.widget.bind('<Configure>',lambda e:self.status.configure(wraplength=max(200,e.width)))
         legend = parent.row(padding=0)
-        Label(legend,'Radar: blue/green → yellow/red = increasing precipitation intensity',style='Muted.TLabel',expand=True,wraplength=180)
+        Label(legend,'Universal Blue radar palette · Smoothed · Separate snow colors',style='Muted.TLabel',expand=True,wraplength=180)
         Button(legend,'RainViewer',lambda:webbrowser.open('https://www.rainviewer.com'))
         Button(legend,'Connection details',self.show_details)
         self.map.on_view_changed = self.view_changed
@@ -80,7 +80,7 @@ class RadarPanel:
         self.busy = True
         self.last_attempt = datetime.now(timezone.utc)
         generation = self.generation
-        self.status.set('Loading recent observed radar… Alert boundaries remain available.')
+        self.status.set('Loading recent past radar… Alert boundaries remain available.')
         self.update_buttons()
         try:
             self.app.run_in_thread(self.service.load,view,
@@ -151,9 +151,9 @@ class RadarPanel:
         stamp = self.frames[self.index][0]
         age = max(0,int((datetime.now(timezone.utc).timestamp()-stamp)/60))
         latest_age = datetime.now(timezone.utc).timestamp()-self.frames[-1][0]
-        state = 'STALE RADAR' if latest_age > 1200 or self.error else 'Observed radar'
-        observed = datetime.fromtimestamp(stamp,timezone.utc)
-        self.status.set(f'{state} · {observed:%Y-%m-%d %H:%M UTC} · {age} min ago · Frame {self.index+1}/{len(self.frames)}'+
+        state = 'STALE RADAR' if latest_age > 1200 or self.error else 'Past radar'
+        generated = datetime.fromtimestamp(stamp,timezone.utc)
+        self.status.set(f'{state} · Frame generated {generated:%Y-%m-%d %H:%M UTC} · {age} min ago · Frame {self.index+1}/{len(self.frames)}'+
                         (f' · {self.error}: {self.diagnostic}' if self.error else '')+' · Radar coverage can be incomplete.')
 
     def show_details(self):
@@ -170,6 +170,9 @@ class RadarPanel:
                     'If using a Windows executable, rebuild from the current source with main.spec; an older EXE '
                     'does not include these changes.\n\n'
                     'Alert monitoring continues independently. Retained imagery always keeps its original timestamp.')
+        text.append('\n\nRainViewer timestamps describe frame generation. A composite frame may contain radar '
+                    'readings from different observation times. Tile options: 256 pixels, zoom at most 7, '
+                    'Universal Blue (2), smoothing on and separate snow colors on (1_1).')
         Button(window,'Close',window.close)
 
     def step(self, delta):

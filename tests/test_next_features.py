@@ -73,7 +73,7 @@ class RadarDataTests(unittest.TestCase):
 
     def metadata(self, now):
         return dict(host='https://tilecache.rainviewer.com',radar=dict(
-            past=[dict(time=now-i*600,path=f'/v2/radar/{now-i*600}') for i in range(13)],
+            past=[dict(time=now-i*600,path=f'/v2/radar/frame_{i:02x}') for i in range(13)],
             nowcast=[dict(time=now+600,path=f'/v2/radar/{now+600}')]))
 
     def test_only_recent_observed_frames_and_trusted_paths_are_used(self):
@@ -101,13 +101,41 @@ class RadarDataTests(unittest.TestCase):
             self.assertLess(x1,2**zoom)
             self.assertGreaterEqual(y0,0)
             self.assertLess(y1,2**zoom)
+            self.assertLessEqual(zoom,7)
+
+    def test_opaque_paths_are_preserved_and_unsafe_paths_rejected(self):
+        now = int(time.time())
+        path = '/v2/radar/2e6b69161301'
+        data = dict(host='https://tilecache.rainviewer.com',radar=dict(past=[dict(time=now,path=path)]))
+        self.assertEqual(parse_frames(data,now),[(now,path)])
+        for invalid in ('/v2/radar/../secret','/v2/radar/a?url=elsewhere','https://example.com/tile','/v2/radar/%2e%2e'):
+            data['radar']['past'][0]['path'] = invalid
+            with self.subTest(path=invalid),self.assertRaises(ValueError):
+                parse_frames(data,now)
+
+    def test_documented_tile_url_uses_metadata_host_path_and_supported_options(self):
+        now = int(time.time())
+        paths = ['/v2/radar/opaque_old','/v2/radar/2e6b69161301']
+        metadata = dict(version='2.0',generated=now,host='https://tilecache.rainviewer.com/',
+                        radar=dict(past=[dict(time=now-600,path=paths[0]),dict(time=now,path=paths[1])]))
+        tile = BytesIO()
+        Image.new('RGBA',(256,256),(25,60,100,255)).save(tile,format='PNG')
+        urls = []
+        def read(url,limit,stop):
+            urls.append(url)
+            return json.dumps(metadata).encode() if url.endswith('weather-maps.json') else tile.getvalue()
+        with patch('radar._read',side_effect=read):
+            _,frames = RadarService().load(Viewport(256,256,0,0,256/360))
+        self.assertEqual([stamp for stamp,_ in frames],[now-600,now])
+        self.assertEqual(urls,['https://api.rainviewer.com/public/weather-maps.json']+
+            [f'https://tilecache.rainviewer.com{path}/256/0/0/0/2/1_1.png' for path in paths])
 
     def test_mercator_tiles_align_with_geographic_map_and_cache_is_reused(self):
         now = int(time.time())
         service = RadarService()
         view = Viewport(400,300,-98,39,8)
         def gradient(key):
-            _,zoom,tx,ty = key
+            _,_,zoom,tx,ty = key
             world = 256*2**zoom
             image = Image.new('RGBA',(256,256))
             image.putdata([(int((tx*256+x)/world*255),int((ty*256+y)/world*255),0,255)
@@ -133,7 +161,7 @@ class RadarDataTests(unittest.TestCase):
         source = BytesIO()
         Image.new('RGBA',(1,1)).save(source,format='PNG')
         with patch('radar._read',return_value=source.getvalue()),self.assertRaises(ValueError):
-            RadarService()._tile(('/v2/radar/123',1,0,0))
+            RadarService()._tile(('https://tilecache.rainviewer.com','/v2/radar/123',1,0,0))
 
 
 @unittest.skipUnless(os.environ.get('DISPLAY'),'GUI tests require DISPLAY')
@@ -212,7 +240,8 @@ class NextFeatureGuiTests(unittest.TestCase):
         image = Image.new('RGBA',(view.width,view.height),(0,180,0,100))
         panel.enabled.set(True)
         panel.loaded(panel.generation,(view,[(now-600,image),(now,image)]))
-        self.assertIn('Observed radar',panel.status.get())
+        self.assertIn('Past radar',panel.status.get())
+        self.assertIn('Frame generated',panel.status.get())
         radar = self.ui.map.canvas.find_withtag('radar')
         self.assertEqual(len(radar),1)
         stacking = self.ui.map.canvas.find_all()
@@ -270,7 +299,7 @@ class NextFeatureGuiTests(unittest.TestCase):
         self.assertNotEqual(threads,[threading.get_ident()])
         self.assertEqual(panel.loaded_view,view)
         self.assertTrue(self.ui.map.canvas.find_withtag('radar'))
-        self.assertNotIn('Observed radar',self.ui.feed.get())
+        self.assertNotIn('Past radar',self.ui.feed.get())
 
     def test_actual_ico_is_loaded_and_windows_taskbar_identity_is_set(self):
         self.assertEqual([i.width() for i in self.ui.app.root._stormwatch_icons],[16,32,48,64])
