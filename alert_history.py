@@ -60,6 +60,9 @@ class AlertHistory(HistoryArchive):
             CREATE TABLE IF NOT EXISTS deliveries (id TEXT, version TEXT, profile TEXT, channel TEXT,
                 state TEXT DEFAULT 'pending', attempts INTEGER DEFAULT 0, error TEXT DEFAULT '',
                 PRIMARY KEY(id, version, profile, channel));
+            CREATE TABLE IF NOT EXISTS notification_decisions (id TEXT, version TEXT, profile TEXT, channel TEXT,
+                location_name TEXT, allowed INTEGER, reason TEXT, recorded_at TEXT,
+                PRIMARY KEY(id,version,profile,channel));
         ''')
         alert_columns = {row[1] for row in self.connection.execute("PRAGMA table_info(alerts)")}
         if "expires_at" not in alert_columns:
@@ -219,6 +222,23 @@ class AlertHistory(HistoryArchive):
                                           (alert_id,version,profile,channel)).fetchone()
             return row["state"] in ("pending","failed") and row["attempts"] < 3
 
+    def record_decision(self, alert_id, version, profile, channel, allowed, reason):
+        """Freeze submitted/quiet decisions; update unsent decisions only when rules change."""
+        with self.transaction():
+            self.connection.execute('''INSERT INTO notification_decisions VALUES (?,?,?,?,?,?,?,?)
+                ON CONFLICT(id,version,profile,channel) DO UPDATE SET location_name=excluded.location_name,
+                allowed=excluded.allowed,reason=excluded.reason,recorded_at=excluded.recorded_at
+                WHERE (notification_decisions.reason!=excluded.reason OR notification_decisions.allowed!=excluded.allowed
+                    OR notification_decisions.location_name!=excluded.location_name)
+                AND NOT EXISTS (SELECT 1 FROM deliveries d WHERE d.id=excluded.id AND d.version=excluded.version
+                    AND d.profile=excluded.profile AND d.channel=excluded.channel AND d.state IN ('sent','skipped'))''',
+                (alert_id,version,profile.id,channel,profile.name,int(allowed),reason,datetime.now(timezone.utc).isoformat()))
+
+    def decision_rows(self, alert_id, version):
+        with self.lock:
+            return [dict(row) for row in self.connection.execute('''SELECT * FROM notification_decisions
+                WHERE id=? AND version=? ORDER BY location_name,channel''',(alert_id,version))]
+
     def pending(self, alert_id, version, profile, channel):
         with self.lock:
             row = self.connection.execute("SELECT state, attempts FROM deliveries WHERE id=? AND version=? AND profile=? AND channel=?",
@@ -302,9 +322,11 @@ class AlertHistory(HistoryArchive):
         with self.lock:
             where = " WHERE d.state='failed'" if failed_only else ""
             rows = self.connection.execute("""SELECT d.*, v.data AS alert_data, v.kind, v.displayed,
-                p.data AS profile_data, a.status AS alert_status, a.version AS current_version
+                p.data AS profile_data, a.status AS alert_status, a.version AS current_version,
+                n.reason AS decision_reason, n.recorded_at AS decision_at
                 FROM deliveries d LEFT JOIN versions v ON d.id=v.id AND d.version=v.version
-                LEFT JOIN profiles p ON d.profile=p.id LEFT JOIN alerts a ON d.id=a.id""" +
+                LEFT JOIN profiles p ON d.profile=p.id LEFT JOIN alerts a ON d.id=a.id
+                LEFT JOIN notification_decisions n ON n.id=d.id AND n.version=d.version AND n.profile=d.profile AND n.channel=d.channel""" +
                 where + " ORDER BY d.rowid DESC LIMIT ? OFFSET ?", (limit, offset)).fetchall()
             return [dict(row, alert=json.loads(row["alert_data"]) if row["alert_data"] else {},
                          location=json.loads(row["profile_data"]) if row["profile_data"] else {}) for row in rows]

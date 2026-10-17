@@ -57,6 +57,9 @@ class LocationProfile:
     watch_desktop: bool | None = None
     # None follows all monitored events; [] silences automatic event sounds.
     sound_events: list[str] | None = None
+    speech: bool = False
+    speech_events: list[str] | None = field(default_factory=lambda: [
+        'Tornado Warning','Tornado Watch','Hurricane Warning','Hurricane Watch'])
 
     def validate(self):
         self.name = self.name.strip()
@@ -78,20 +81,28 @@ class LocationProfile:
                 value = getattr(self, f"{kind}_{channel}")
                 if value is not None and not isinstance(value, bool):
                     raise ValueError("Watch and warning notification rules must be on or off.")
-        if self.sound_events is not None:
-            if not isinstance(self.sound_events,list) or any(not isinstance(event,str) or
-                    not event.endswith((' Warning',' Watch')) for event in self.sound_events):
-                raise ValueError('Sound events must be a list of watch/warning event names.')
-            self.sound_events = sorted(set(self.sound_events))
+        if not isinstance(self.speech,bool):
+            raise ValueError('Read alerts aloud must be on or off.')
+        for channel in ('sound','speech'):
+            events = getattr(self,channel+'_events')
+            if events is not None:
+                if not isinstance(events,list) or any(not isinstance(event,str) or
+                        not event.endswith((' Warning',' Watch')) for event in events):
+                    raise ValueError(f'{channel.title()} events must be a list of watch/warning event names.')
+                setattr(self,channel+'_events',sorted(set(events)))
         return self
 
     def allows(self, alert, channel):
         event = alert.get("event", "") if isinstance(alert, dict) else alert
         kind = "warning" if event.endswith(" Warning") else "watch" if event.endswith(" Watch") else None
-        if channel not in ("sound", "desktop") or kind is None or not getattr(self, channel):
+        if channel not in ("sound", "desktop", "speech") or kind is None or not getattr(self, channel):
             return False
-        if channel == 'sound' and self.sound_events is not None and event not in self.sound_events:
-            return False
+        if channel in ('sound','speech'):
+            events = getattr(self,channel+'_events')
+            if events is not None and event not in events:
+                return False
+        if channel == 'speech':
+            return True
         override = getattr(self, f"{kind}_{channel}")
         return override if override is not None else True
 
@@ -103,22 +114,37 @@ class LocationProfile:
             result.append(f"{kind}s: {' + '.join(channels) or 'Off'}")
         if self.sound_events is not None:
             result.append(f'Sound filter: {len(self.sound_events)} event types' if self.sound_events else 'Sound filter: no events')
+        if self.speech:
+            result.append('Speech: '+('all monitored events' if self.speech_events is None else f'{len(self.speech_events)} event types'))
         return "\n".join(result)
 
-    def matches(self, alert):
+    def explain_match(self, alert):
         if not self.enabled or alert["event"] not in self.events:
-            return False
+            return False, 'Location monitoring is disabled.' if not self.enabled else f"{alert['event']} is not selected for monitoring."
+        reasons = []
         codes = set(alert.get("geocode", {}).get("UGC", []))
         codes.update(url.rstrip("/").rsplit("/", 1)[-1] for url in alert.get("zones", []))
         if self.states and not any(code[:2] in self.states for code in codes):
-            return False
+            return False, 'The alert does not match the selected states: '+', '.join(self.states)+'.'
+        if self.states:
+            reasons.append('state '+', '.join(sorted({code[:2] for code in codes if code[:2] in self.states})))
         if self.counties and not codes.intersection(self.counties):
-            return False
+            return False, 'The alert does not match the selected county codes.'
+        if self.counties:
+            reasons.append('county '+', '.join(sorted(codes.intersection(self.counties))))
         if self.latitude is not None:
             if rings(alert.get("geometry")) and alert.get("geometry_source") != "NWS affected zones":
-                return contains(alert["geometry"], self.latitude, self.longitude)
-            return bool(codes.intersection(self.zones))
-        return True
+                if not contains(alert["geometry"], self.latitude, self.longitude):
+                    return False, 'The saved pin is outside the NWS storm polygon.'
+                reasons.append('saved pin inside the NWS storm polygon')
+            else:
+                if not codes.intersection(self.zones):
+                    return False, 'The alert does not match the pin’s resolved NWS zones; no precise storm polygon is available.'
+                reasons.append('resolved NWS zone '+', '.join(sorted(codes.intersection(self.zones)))+' (no precise storm polygon)')
+        return True, 'Matched '+('; '.join(reasons) if reasons else 'nationwide monitoring')+'.'
+
+    def matches(self, alert):
+        return self.explain_match(alert)[0]
 
     def summary(self):
         parts = self.states + self.counties

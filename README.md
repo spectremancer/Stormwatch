@@ -1,7 +1,7 @@
 # Stormwatch
 
 A TkFlow desktop weather dashboard for saved locations, live National Weather
-Service watches and warnings, and independent sound/desktop notifications.
+Service watches and warnings, and independent sound, desktop, and optional spoken notifications.
 
 ## Install and run
 
@@ -95,7 +95,7 @@ Cancellations and expired versions remain silent regardless of warning rules.
 
 ### Choose which events play alert.mp3
 
-Select a location in the sidebar, then choose **Sound events…**. To play sound
+Select a location in the sidebar, then choose **Sound events**. To play sound
 only for tornado and hurricane events, choose **Tornado + hurricane**, then
 **Save sound events**. This selects Tornado Warning, Tornado Watch, Hurricane
 Warning, and Hurricane Watch. You can instead uncheck **Allow sound for all
@@ -113,9 +113,72 @@ persist across restarts and apply on the next refresh. Pending and manual retrie
 also check the current sound filter. Existing profiles keep their previous sound
 behavior until a filter is saved.
 
-**Test alert sound** is an explicit manual preview and still plays on request,
+**Test sound** is an explicit manual preview and still plays on request,
 even when all automatic event sounds are disabled. Previewing Demo sounds is
 also separate from live location preferences.
+
+## Notification explanations
+
+Open an alert's details and choose **Why did I get this?**. This explains the
+event selection and geographic match for each saved location: state, county,
+storm polygon, resolved NWS zone, or nationwide monitoring. It also explains
+silence caused by disabled monitoring, an unselected event, a channel switch,
+event/category filters, quiet startup, legacy history, cancellation, expiration,
+or an alert that is no longer current. Explanations and operational messages
+stay outside the alert-only chat feed.
+
+Decisions for sound, desktop, and speech are saved separately when a matching
+alert version is processed. A submitted or quiet-baseline decision stays fixed;
+unsent decisions can update when preferences change. The explanation window
+distinguishes recorded decisions from **current preferences**, so changing a
+location afterward does not rewrite why a previous notification was submitted.
+Delivery details include the recorded reason, shared-location result, and errors.
+Older and simulated records without decisions say so rather than inventing a
+historical explanation. These records use an additive SQLite table; existing
+alerts, history, and receipts remain intact.
+
+## Spoken alerts
+
+Choose a location and open **Spoken alerts**. Enable **Read alerts aloud**, choose
+individual event types or the **Tornado + hurricane** preset, then save. Speech
+is **off by default**, including for existing profiles. Its event filter is
+independent of `alert.mp3` and desktop/category preferences; the location must
+still be enabled and the event selected for monitoring. **All event types** also
+allows future monitored types; **No spoken events** leaves automatic speech
+silent. **Test voice** is an explicit preview, even with automatic speech off.
+
+Announcements read the event, matching saved-location names, update type when
+applicable, and the expiration in the computer's local timezone. They do not
+rewrite safety instructions or infer storm movement. For example: “Tornado
+Warning for Home, Family. Until October 17 at 8:30 PM CDT.”
+
+Speech uses local operating-system voices, with no cloud speech service or API key:
+
+| Platform | Local engine |
+| --- | --- |
+| Windows | Windows PowerShell and .NET `System.Speech`, using the default installed voice/audio output |
+| macOS | `/usr/bin/say` |
+| Linux | `espeak-ng` or `espeak`, installed separately |
+
+An unavailable engine reports a clear failure in Delivery or the test feedback.
+Native Windows speech execution has not been verified on the Linux development
+machine; Windows command construction, Unicode stdin, failures, cancellation,
+timeouts, and receipt behavior are tested with controlled subprocesses.
+
+Speech has its own worker and receipts, so a slow/failed voice does not block
+polling, sound, or desktop submission. Overlapping locations share one spoken
+submission per alert version. Failed speech retries on refresh up to three
+shared attempts; Delivery can retry that failed channel once without replaying
+successful sound or desktop channels. Successful speech is not repeated for an
+unchanged version. Quiet startup/legacy suppression applies to speech too.
+
+The speech queue holds at most 32 alert versions, prioritizing warnings, severity,
+and tornado/hurricane events. Eligible overflow remains pending for a later
+refresh. Before speaking, the worker checks current preferences, fresh monitoring
+data, version, and expiration. Cancelled, superseded, and expired alerts stay
+silent. Pausing monitoring clears the queue and stops the owned voice process;
+closing the application also stops it. Each native speech command has a 45-second
+timeout. Completion does not prove someone heard the announcement.
 
 ## Active alerts, lifecycle, and map
 
@@ -266,7 +329,7 @@ The previous ID-only behavior has been replaced by per-version records:
   not duplicate the feed. Map-only zone enrichment does not create a version.
 - Current cards always reflect the latest successful snapshot, regardless of
   whether that version was previously displayed or notified.
-- Feed display, sound submission, and desktop submission are recorded separately.
+- Feed display, sound submission, desktop submission, and speech are recorded separately.
   A desktop failure does not replay a sound that was already submitted
   successfully, and vice versa. Failed channels retry on subsequent successful
   refreshes, up to three shared attempts per alert version/channel, regardless
@@ -328,7 +391,7 @@ export. Export cannot overwrite the application database.
 
 ## Notification delivery panel
 
-The **Delivery** tab lists sound and desktop channel records separately, with
+The **Delivery** tab lists sound, desktop, and enabled speech channel records separately, with
 pagination and a **Failed only** filter. Select a row to inspect the location,
 alert version, feed logging state, scheduled time, last-attempt time, attempt
 count, shared-submission/location information, suppression reason, and the last reported error. Results distinguish
@@ -443,9 +506,11 @@ watch/warning rules, history filters, full snapshot CSV export, editable-field
 contrast, large batches, transaction rollback, idle expiry lookups, and redraw
 reuse, change summaries, removed-location updates, location threat ranking,
 radar projection, caching, playback, stale imagery, icon setup, event-specific
-sound filters, and safe connection diagnostics/redirect handling. Windows Run-entry and
+sound filters, safe connection diagnostics/redirect handling, recorded notification
+explanations, speech preferences, independent voice retries, bounded queuing,
+cancellation, and slow-voice isolation. Windows Run-entry and
 notification submission paths are mocked on Linux; actual Windows tray/toast
 behavior still needs verification on Windows.
 
-Forecasts, text-to-speech, severity-specific rules, and individual-event desktop
+Forecasts, severity-specific rules, and individual-event desktop
 notification rule editors are not part of this release.

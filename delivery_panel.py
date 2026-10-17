@@ -20,6 +20,8 @@ def delivery_status(row, running=True, automatic=True):
         return 'Paused by preferences'
     if row.get('current_version') != row['version'] or row.get('alert_status') not in ('Active', 'Cancelled'):
         return 'No longer current'
+    if row['channel'] in ('sound','speech') and row.get('alert_status') != 'Active':
+        return 'No longer current'
     if not running:
         return 'Failed · paused' if state == 'failed' else 'Waiting · paused'
     return ('Failed · retry on refresh' if automatic else 'Failed · manual retry') if state == 'failed' else 'Pending'
@@ -61,7 +63,7 @@ class DeliveryPanel:
         self.row_map = {}
         if not compact:
             Label(parent, title, style='Heading.TLabel')
-            Label(parent, 'Sound and desktop results are independent. Submitted means accepted for playback or OS submission;\n'
+            Label(parent, 'Sound, desktop and speech results are independent. Submitted means accepted/completed locally;\n'
                   'it does not confirm that you heard or saw the notification.', style='Muted.TLabel', wraplength=760)
         actions = parent.row(padding=0)
         self.failed_only = Checkbox(actions, 'Failed only', command=lambda _: self.filter_changed())
@@ -129,6 +131,8 @@ class DeliveryPanel:
             f"Alert version: {row['version'][:12]} · Feed: {'logged' if row.get('displayed') else 'not logged'}\n"
             f"Scheduled: {local_time(row.get('scheduled_at'))} · Last attempt: {local_time(row.get('last_attempt'))}\n"
             f"Shared channel attempts: {row['attempts']} (automatic limit: 3; manual retry adds one attempt)\n"
+            f"Why this notification: {row.get('decision_reason') or 'No decision recorded for this older or simulated alert.'}\n"
+            f"{'Speech waits in its own bounded queue and rechecks current rules, freshness, and expiration before speaking.' if row['channel'] == 'speech' else ''}\n"
             f"{row.get('reason') or ''}\n{('Last error: ' + row['error']) if row.get('error') else 'No reported error.'}")
 
     def retry_selected(self):

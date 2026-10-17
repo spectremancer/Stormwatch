@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import nullcontext
 from itertools import islice
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
@@ -15,7 +16,7 @@ import pygame
 from TkFlow import App, Button, Checkbox, Dropdown, Form, Label, TextArea, Window
 from WeatherService import WeatherService
 from alert_history import AlertHistory, instant, reference_ids
-from dashboard_views import AlertMap, Cards, Tabs, LocationOverview
+from dashboard_views import AlertMap, Cards, Tabs, LocationOverview, threat_priority
 from desktop import Tray, set_login, configure_identity
 from location_wizard import LocationWizard
 from delivery_panel import DeliveryPanel
@@ -25,6 +26,8 @@ from notification_rules import add_rule_fields, rule_values
 from history_panel import HistoryPanel
 from radar_panel import RadarPanel
 from sound_preferences import SoundPreferences
+from notification_explanations import decisions, explanation_text
+from speech import SpeechService, SpeechCancelled, announcement
 
 EVENT_FAMILIES = (
     "Tornado", "Severe Thunderstorm", "Hurricane", "Tropical Storm",
@@ -61,6 +64,11 @@ class StormwatchApp:
         self.sound_lock = threading.Lock()
         self.delivery_busy = False
         self.delivery_future = None
+        self.speaker = SpeechService()
+        self.speech_busy = False
+        self.speech_future = None
+        self.speech_pending = {}
+        self.speech_current = None
         self.cancel_since = datetime.now(timezone.utc) - timedelta(minutes=15)
         self.loading_profile = False
         self.tray_ready = False
@@ -75,7 +83,7 @@ class StormwatchApp:
         Button(header, "Minimize to tray", self.hide_to_tray)
         Button(header, "Quit", self.close)
         body = self.app.row(padding=0, expand=True, fill="both", spacing=20)
-        controls = body.column(padding=12, spacing=8, style="Panel.TFrame")
+        controls = body.column(padding=12, spacing=6, style="Panel.TFrame")
         Label(controls, "Saved locations", style="Heading.TLabel")
         self.profile_picker = Dropdown(controls, [p.name for p in self.profiles],
                                        on_change=self.choose_profile)
@@ -101,10 +109,12 @@ class StormwatchApp:
         self.selection = Label(controls, "", style="Muted.TLabel")
         self.update_selection(save=False)
         self.toggle = Button(controls, "Start monitoring", self.toggle_monitoring, style="Primary.TButton")
-        audio = controls.row(padding=0)
-        Button(audio,'Sound events…',self.edit_sound_events)
-        self.sound_button = Button(audio, "▶  Test alert sound", self.test_sound)
+        audio = controls.row(padding=0,spacing=4)
+        Button(audio,'Sound events',self.edit_sound_events,width=0)
+        Button(audio,'Spoken alerts',self.edit_speech_events,width=0)
+        self.sound_button = Button(audio, "Test sound", self.test_sound,width=0)
         self.sound_preferences = None
+        self.speech_preferences = None
         self.tray_mode = Checkbox(controls, "Close window to tray",
                                   value=self.history.setting("close_to_tray", False), command=self.set_tray_mode)
         self.login = Checkbox(controls, "Launch at login (Windows)",
@@ -241,6 +251,11 @@ class StormwatchApp:
             self.sound_preferences.window.close()
         self.sound_preferences = SoundPreferences(self)
 
+    def edit_speech_events(self):
+        if self.speech_preferences and not self.speech_preferences.window._closed:
+            self.speech_preferences.window.close()
+        self.speech_preferences = SoundPreferences(self,'speech')
+
     def edit_profile(self, new=False):
         profile = LocationProfile(name="New location") if new else replace(self.profile)
         window = Window(self.app, "Add location" if new else "Edit location", width=570, height=730)
@@ -280,6 +295,8 @@ class StormwatchApp:
                                     longitude=float(values["lon"]) if values["lon"].strip() else None,
                                     enabled=values["enabled"], sound=values["sound"], desktop=values["desktop"],
                                     sound_events=next((p.sound_events for p in self.profiles if p.id == profile.id),profile.sound_events),
+                                    speech=next((p.speech for p in self.profiles if p.id == profile.id),profile.speech),
+                                    speech_events=next((p.speech_events for p in self.profiles if p.id == profile.id),profile.speech_events),
                                     **rule_values(values)).validate()
                 if any(p.name == candidate.name and p.id != candidate.id for p in self.profiles):
                     raise ValueError("A location with this name already exists.")
@@ -343,6 +360,8 @@ class StormwatchApp:
         if self.running:
             self.running = False
             self.generation += 1
+            self.speech_pending.clear()
+            self.speaker.stop()
             if self.timer is not None:
                 self.app.root.after_cancel(self.timer)
                 self.timer = None
@@ -447,13 +466,14 @@ class StormwatchApp:
                                 messages.append((previous,status,[]))
                     end = instant(alert.get("ends") or alert.get("expires"))
                     expired = end and end <= datetime.now(timezone.utc)
-                    for profile in matched:
-                        if expired and alert.get("message_type") != "Cancel":
-                            continue
+                    for profile in matched or prior_matches:
                         quiet = legacy or (not self.initialized and alert["event"] not in CRITICAL)
-                        for channel, enabled in ((c, profile.allows(alert, c)) for c in ("sound", "desktop")):
-                            if enabled and not (channel == "sound" and (expired or kind == "Cancelled")):
-                                if self.history.schedule(alert["id"], version, profile.id, channel, quiet):
+                        choices = decisions(profile,alert,kind,quiet,legacy)
+                        for channel,choice in choices.items():
+                            self.history.record_decision(alert['id'],version,profile,channel,**choice)
+                            enabled = profile in matched and profile.allows(alert,channel)
+                            if enabled and not (expired and alert.get('message_type') != 'Cancel') and not (channel in ('sound','speech') and (expired or kind == 'Cancelled')):
+                                if self.history.schedule(alert["id"], version, profile.id, channel, quiet,choice['reason']):
                                     jobs.append((alert, version, profile.id, channel, kind))
             self.append_alerts(messages)
             if len(batch) == 20:
@@ -470,10 +490,13 @@ class StormwatchApp:
         self.last_error = ""
         self.state.set("●  MONITORING")
         self.render_active()
+        speech_jobs = [job for job in jobs if job[3] == 'speech']
+        jobs = [job for job in jobs if job[3] != 'speech']
         if not self.delivery_busy and jobs:
             self.delivery_busy = True
             self.delivery_future = self.app.run_in_thread(self.send_notifications, state["generation"], jobs,
                                    on_result=self.delivered, on_error=self.delivery_failed)
+        self.enqueue_speech(state['generation'],speech_jobs)
         self.schedule_next()
         self.status.set(state["warning"] or "Alerts are current • Monitoring all enabled locations.")
         self.update_health()
@@ -484,10 +507,12 @@ class StormwatchApp:
         for alert, version, _, channel, kind in jobs:
             grouped[(alert["id"], version, channel)] = (alert, kind)
         for (alert_id, version, channel), (alert, kind) in grouped.items():
-            with self.sound_lock:
+            with (nullcontext() if channel == 'speech' else self.sound_lock):
                 if not self.running or generation != self.generation:
                     break
                 if not self.history.is_current(alert_id, version):
+                    continue
+                if channel in ('sound','speech') and self.history.get_alert(alert_id)['status'] != 'Active':
                     continue
                 end = instant(alert.get("ends") or alert.get("expires"))
                 if end and end <= datetime.now(timezone.utc) and kind != "Cancelled":
@@ -508,17 +533,90 @@ class StormwatchApp:
                 if manual and not any(self.history.delivery(alert_id, version, p.id, channel)["state"] == "failed" for p in profiles):
                     continue
                 names = ", ".join(p.name for p in profiles)
+                for profile in profiles:
+                    choice = decisions(profile,alert,kind)[channel]
+                    self.history.record_decision(alert_id,version,profile,channel,**choice)
                 try:
                     if channel == "sound":
                         self.service.deliver_sound()
+                    elif channel == 'speech':
+                        self.speaker.speak(announcement(alert,profiles,kind),
+                                           should_continue=lambda:self.running and generation == self.generation and self.speech_fresh())
                     else:
                         self.service.deliver_desktop(alert, kind, names)
+                except SpeechCancelled:
+                    continue
                 except Exception as error:
                     self.history.combined_receipt(alert_id, version, channel, profiles, error)
                     errors.append(f"{names} {channel}: {error}")
                 else:
                     self.history.combined_receipt(alert_id, version, channel, profiles)
         return errors
+
+    def enqueue_speech(self, generation, jobs):
+        for job in sorted(jobs,key=lambda item:threat_priority(item[0]),reverse=True):
+            key = (job[0]['id'],job[1])
+            if key == self.speech_current or key in self.speech_pending:
+                continue
+            if len(self.speech_pending) >= 32:
+                lowest = min(self.speech_pending,key=lambda k:threat_priority(self.speech_pending[k][1][0]))
+                if threat_priority(job[0]) <= threat_priority(self.speech_pending[lowest][1][0]):
+                    continue
+                self.speech_pending.pop(lowest)
+            self.speech_pending[key] = (generation,job)
+        self.start_speech()
+
+    def start_speech(self):
+        if self.speech_busy or not self.running or self.app._closed or not self.speech_pending:
+            return
+        if not self.speech_fresh():
+            return
+        key = max(self.speech_pending,key=lambda k:threat_priority(self.speech_pending[k][1][0]))
+        generation,job = self.speech_pending.pop(key)
+        self.speech_busy, self.speech_current = True,key
+        try:
+            self.speech_future = self.app.run_in_thread(self.send_notifications,generation,[job],
+                on_result=self.speech_done,on_error=self.speech_failed)
+        except RuntimeError:
+            self.speech_busy, self.speech_current = False,None
+            self.speech_pending[key] = (generation,job)
+            self.status.set('Speech is waiting for a background worker. It will be checked on the next refresh.')
+
+    def speech_fresh(self):
+        return bool(self.last_success and not self.last_error and
+                    (datetime.now(timezone.utc)-self.last_success).total_seconds()<max(120,self.service.interval*2))
+
+    def speech_done(self, errors):
+        self.speech_busy, self.speech_current = False,None
+        self.refresh_records()
+        if errors:
+            self.status.set('Speech failed · See Delivery for the reason and retry options.')
+        self.start_speech()
+
+    def speech_failed(self, error):
+        self.speech_busy, self.speech_current = False,None
+        self.status.set(f'Speech worker failed: {error}')
+        self.start_speech()
+
+    def test_speech(self, feedback=None):
+        if self.speech_busy:
+            if feedback:
+                feedback('A voice announcement is already running. Try again when it finishes.')
+            return
+        self.speech_busy = True
+        def finished(error=None):
+            self.speech_busy = False
+            message = f'Voice test failed: {error}' if error else 'Voice test completed. Check your audio output.'
+            self.status.set(message)
+            if feedback:
+                feedback(message)
+            self.start_speech()
+        try:
+            self.speech_future = self.app.run_in_thread(self.speaker.speak,
+                'Stormwatch voice preview. This is a test, not a weather alert.',
+                on_result=lambda _:finished(),on_error=finished)
+        except RuntimeError:
+            finished('The background queue is busy. Try Test voice again shortly.')
 
     def delivered(self, errors):
         self.delivery_busy = False
@@ -537,7 +635,7 @@ class StormwatchApp:
         if not self.running:
             self.status.set("Start monitoring before retrying a live notification channel.")
             return
-        if self.delivery_busy:
+        if (self.speech_busy if row['channel'] == 'speech' else self.delivery_busy):
             self.status.set("A notification submission is already in progress. Try again when it finishes.")
             return
         fresh = self.last_success and not self.last_error and (datetime.now(timezone.utc) - self.last_success).total_seconds() < max(120, self.service.interval * 2)
@@ -547,11 +645,26 @@ class StormwatchApp:
         if not fresh or not current or current["version"] != row["version"] or current["status"] not in ("Active", "Cancelled"):
             self.status.set("Only current notifications with fresh live data can be retried. Wait for a successful refresh.")
             return
+        if row['channel'] in ('sound','speech') and current['status'] != 'Active':
+            self.status.set('Cancelled alerts do not play sound or speech.')
+            return
         if not profile or not profile.matches(row["alert"]) or not profile.allows(row["alert"], row["channel"]):
             self.status.set("This notification channel is disabled or no longer matches an enabled location.")
             return
         if not receipt or receipt["state"] != "failed":
             self.status.set("Only failed channels can be retried; successful submissions will not be replayed.")
+            return
+        if row['channel'] == 'speech':
+            self.speech_pending.pop((row['id'],row['version']),None)
+            self.speech_busy = True
+            self.speech_current = (row['id'],row['version'])
+            try:
+                self.speech_future = self.app.run_in_thread(self.send_notifications,self.generation,
+                    [(row['alert'],row['version'],profile.id,'speech',row['kind'])],True,
+                    on_result=self.speech_done,on_error=self.speech_failed)
+            except RuntimeError:
+                self.speech_busy, self.speech_current = False,None
+                self.status.set('The background queue is busy. Try the speech retry again shortly.')
             return
         self.delivery_busy = True
         self.status.set(f"Retrying {row['channel']} once for {profile.name}…")
@@ -662,9 +775,17 @@ class StormwatchApp:
         summary = self.history.change_summary(alert) if summary is None else summary
         details.set((f'What changed: {summary}\n\n' if summary else '') + f"{alert['headline']}\n\n{alert['area']}\n\nSeverity: {alert['severity']}\nIssued: {alert['sent']}\n"
                     f"Expires: {alert['expires']}\n\n{alert.get('description', '')}\n\n{alert['instruction']}")
+        Button(window,'Why did I get this?',lambda:self.show_notification_explanation(alert))
         from urllib.parse import urlparse
         if urlparse(alert["url"]).scheme == "https":
             Button(window, "Open official alert", lambda: webbrowser.open(alert["url"]))
+
+    def show_notification_explanation(self, alert):
+        window = Window(self.app,'Notification explanations',width=780,height=620)
+        Label(window,'Why did I get this? / Why was it silent?',style='Heading.TLabel')
+        text = TextArea(window,readonly=True,expand=True,fill='both',bg='#101c30',fg='#e5edf8',padx=14,pady=12,autoscroll=False)
+        text.set(explanation_text(self.history,alert,self.profiles))
+        Button(window,'Close',window.close)
 
     def clear_feed(self):
         self.feed.clear()
@@ -740,6 +861,8 @@ class StormwatchApp:
             if timer is not None:
                 self.app.root.after_cancel(timer)
         self.tray.stop()
+        self.speech_pending.clear()
+        self.speaker.stop()
         self.radar.close()
         self.app.root._stormwatch_icons.clear()
         self.app.close()
@@ -747,6 +870,11 @@ class StormwatchApp:
         self.cleanup_thread.start()
 
     def cleanup(self):
+        if self.speech_future is not None:
+            try:
+                self.speech_future.result()
+            except Exception:
+                pass
         if self.delivery_future is not None:
             try:
                 self.delivery_future.result()
