@@ -13,6 +13,16 @@ python main.py
 ```
 
 Run `python main.py --monitor` to immediately monitor the saved locations.
+
+Before choosing **Start monitoring**, use **NWS refresh** in the sidebar to select
+**30, 60, 90, or 120 seconds**. The default is 60 seconds, and your choice is saved
+across restarts, including `--monitor` and launch-at-login startup. The selector
+is locked while monitoring; pause to choose a different interval, then start
+again. The first check runs immediately; subsequent checks wait the selected
+interval after the previous check finishes. Failed requests use the same retry
+interval. The countdown and stale-data checks follow the chosen interval.
+Radar retains its separate five-minute refresh schedule.
+
 `--test-tornado` and `--test-hurricane` play `alert.mp3` without opening the GUI.
 The interface needs a desktop display; audible alerts need an audio device.
 Linux may require `python3-tk` and desktop notification tools such as
@@ -453,7 +463,8 @@ The health banner shows the last successful refresh, the next refresh countdown,
 and **STALE** when paused, after a failure, or when data is at least two polling
 intervals old (minimum two minutes). A failed active request preserves the last
 known cards rather than interpreting missing data as cancellations. Cancellation
-coverage warnings are displayed separately. Refresh interval: 60 seconds.
+coverage warnings are displayed separately. NWS refresh interval: configurable
+at 30, 60, 90, or 120 seconds (default 60).
 
 Alert monitoring uses `api.weather.gov` for alert, cancellation,
 county, point-resolution, and boundary requests. Optional radar uses the two

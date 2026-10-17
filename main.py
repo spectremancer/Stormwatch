@@ -37,12 +37,15 @@ EVENT_FAMILIES = (
     "Wind Chill", "Red Flag", "Fire Weather", "Storm", "Gale", "Tsunami",
 )
 CRITICAL = {"Tornado Warning", "Tornado Watch", "Hurricane Warning", "Hurricane Watch"}
+REFRESH_INTERVALS = (30,60,90,120)
 
 
 class StormwatchApp:
     def __init__(self, service=None, history=None):
         self.service = service or WeatherService(interval=60)
         self.history = history if history is not None else AlertHistory()
+        saved_interval = self.history.setting('nws_refresh_interval',60)
+        self.service.interval = saved_interval if type(saved_interval) is int and saved_interval in REFRESH_INTERVALS else 60
         self.profiles = self.history.profiles()
         if not self.profiles:
             self.profiles = [LocationProfile()]
@@ -108,6 +111,10 @@ class StormwatchApp:
             self.add_event(event, True)
         self.selection = Label(controls, "", style="Muted.TLabel")
         self.update_selection(save=False)
+        refresh = controls.row(padding=0)
+        Label(refresh,'NWS refresh',style='Muted.TLabel',expand=True)
+        self.refresh_interval_picker = Dropdown(refresh,[f'{seconds} seconds' for seconds in REFRESH_INTERVALS],
+            value=f'{self.service.interval} seconds',on_change=self.set_refresh_interval,width=11)
         self.toggle = Button(controls, "Start monitoring", self.toggle_monitoring, style="Primary.TButton")
         audio = controls.row(padding=0,spacing=4)
         Button(audio,'Sound events',self.edit_sound_events,width=0)
@@ -356,6 +363,28 @@ class StormwatchApp:
             self.history.delete_profile(self.profile.id)
             self.refresh_profiles()
 
+    def set_refresh_interval(self, value):
+        previous = f'{self.service.interval} seconds'
+        if self.running:
+            self.refresh_interval_picker.set(previous)
+            self.status.set('Pause monitoring before changing the NWS refresh interval.')
+            return False
+        choices = {f'{seconds} seconds':seconds for seconds in REFRESH_INTERVALS}
+        if value not in choices:
+            self.refresh_interval_picker.set(previous)
+            self.status.set('Choose an NWS refresh interval of 30, 60, 90, or 120 seconds.')
+            return False
+        try:
+            self.history.save_setting('nws_refresh_interval',choices[value])
+        except sqlite3.Error:
+            self.refresh_interval_picker.set(previous)
+            self.status.set('Could not save the NWS refresh interval. Try again before starting monitoring.')
+            return False
+        self.service.interval = choices[value]
+        self.refresh_interval_picker.set(value)
+        self.status.set(f'NWS refresh set to {value} · Applies when monitoring starts.')
+        return True
+
     def toggle_monitoring(self):
         if self.running:
             self.running = False
@@ -366,6 +395,7 @@ class StormwatchApp:
                 self.app.root.after_cancel(self.timer)
                 self.timer = None
             self.next_refresh = None
+            self.refresh_interval_picker.enable()
             self.toggle.set("Start monitoring")
             self.state.set("●  PAUSED")
             self.status.set("Paused • Saved alerts remain visible.")
@@ -374,7 +404,10 @@ class StormwatchApp:
         elif not any(p.enabled and p.events for p in self.profiles):
             self.status.set("Enable at least one location and select an event type.")
         else:
+            if not self.set_refresh_interval(self.refresh_interval_picker.get()):
+                return
             self.running = True
+            self.refresh_interval_picker.disable()
             self.toggle.set("Pause monitoring")
             self.state.set("●  MONITORING")
             self.poll()
