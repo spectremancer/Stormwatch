@@ -234,6 +234,14 @@ class AlertHistory(HistoryArchive):
                     AND d.profile=excluded.profile AND d.channel=excluded.channel AND d.state IN ('sent','skipped'))''',
                 (alert_id,version,profile.id,channel,profile.name,int(allowed),reason,datetime.now(timezone.utc).isoformat()))
 
+    def suppress_delivery(self, alert_id, version, profile, channel, reason):
+        """Retire old pending/failed work while preserving successful deliveries."""
+        with self.transaction():
+            self.schedule(alert_id,version,profile,channel,quiet=True,reason=reason)
+            self.connection.execute('''UPDATE deliveries SET state='skipped',reason=?
+                WHERE id=? AND version=? AND profile=? AND channel=? AND state IN ('pending','failed')''',
+                (reason,alert_id,version,profile,channel))
+
     def decision_rows(self, alert_id, version):
         with self.lock:
             return [dict(row) for row in self.connection.execute('''SELECT * FROM notification_decisions

@@ -180,7 +180,19 @@ polling, sound, or desktop submission. Overlapping locations share one spoken
 submission per alert version. Failed speech retries on refresh up to three
 shared attempts; Delivery can retry that failed channel once without replaying
 successful sound or desktop channels. Successful speech is not repeated for an
-unchanged version. Quiet startup/legacy suppression applies to speech too.
+unchanged version. Legacy history remains a quiet baseline.
+
+Automatic speech covers **only alert messages issued after the current monitoring
+session starts**. Each Start or resume establishes a new cutoff using the NWS
+issue timestamp. Alerts already in effect, late-arriving older messages, and
+alerts with missing/invalid/timezone-less issue times stay silent, including
+tornado and hurricane alerts. They still appear in the feed, cards, and History;
+sound and desktop preferences keep their existing behavior. New messages issued
+after Start can speak even on the first successful refresh. New issued versions
+can qualify; an older issue time does not qualify merely because content changed.
+Old pending/failed speech jobs are suppressed on resume rather than replayed,
+and speech retries must satisfy the current session cutoff. **Test voice** and
+explicit simulation previews remain available.
 
 The speech queue holds at most 32 alert versions, prioritizing warnings, severity,
 and tornado/hurricane events. Eligible overflow remains pending for a later
@@ -263,6 +275,9 @@ times; its timestamp is not the observation time of every radar reading. The
 overlay uses the **Universal Blue** palette with smoothing and separate snow
 colors enabled. Radar colors represent reflectivity, not warning severity.
 Radar coverage can be incomplete; a blank area does not prove safety.
+**Connection details** sits alongside the map's zoom and Fit buttons. The separate
+palette legend row and RainViewer button have been removed, giving that space
+to the map canvas. Palette settings remain available in Connection details.
 
 Radar refreshes every five minutes while enabled and the map is visible. A
 failed refresh retains the last successful imagery with its original timestamp
@@ -281,8 +296,8 @@ monitoring and the offline map continue if radar is unavailable.
 
 Radar needs HTTPS access to `api.rainviewer.com` and `tilecache.rainviewer.com`.
 No API key is required by this integration; availability and usage remain
-subject to the provider's service and terms. RainViewer attribution links from
-the map. The integration was checked against the official
+subject to the provider's service and terms. RainViewer is credited in the frame
+status and Connection details. The integration was checked against the official
 [Weather Maps API documentation](https://www.rainviewer.com/api/weather-maps-api.html)
 and [color scheme documentation](https://www.rainviewer.com/api/color-schemes.html).
 It requests `https://api.rainviewer.com/public/weather-maps.json`, reads
@@ -401,7 +416,7 @@ choose a full event name from the dropdown. Search and CSV export use the same
 filters. History searches alerts recorded locally, including optional NWS downloads.
 
 Use **Download recent alerts** in History to fetch past NWS watches and warnings.
-Choose inclusive local dates, one state/territory, and event types (including
+Choose inclusive local dates, **All US** or one state/territory, and event types (including
 tornado watches and warnings together). Downloads are opt-in and run separately
 from live monitoring. **Cancel download** stops after the current request; closing
 the dialog or quitting also requests cancellation.
@@ -417,7 +432,10 @@ All pages must succeed before a single atomic import. Downloads are limited to
 that limit is reached. Failed or cancelled downloads keep no partial import.
 Existing alert versions are skipped. Imported rows show **NWS API archive**, use
 NWS issue time, and carry a **NWS archive · STATE** location label distinct from
-saved monitoring profiles. Search filters reset after import so new records are
+saved monitoring profiles (**NWS archive · US** for nationwide downloads).
+All US requests omit the NWS area filter; the same pagination, 5,000-message,
+time, and cancellation limits apply. Narrow dates or event types if a nationwide
+query exceeds the limit. Search filters reset after import so new records are
 visible. Their NWS message types identify new, updated, or cancelled messages;
 extensions and missing intermediate versions are not inferred.
 

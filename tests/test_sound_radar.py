@@ -187,3 +187,25 @@ class SoundRadarGuiTests(unittest.TestCase):
         self.assertIn('CONNECT HTTP 403',text.get())
         self.assertIn('tilecache.rainviewer.com',text.get())
         self.assertNotIn('Proxy refused',self.ui.feed.get())
+
+    def test_map_connection_details_share_zoom_toolbar_and_removed_legend_frees_space(self):
+        self.ui.tabs.widget.select(self.ui.map.parent.widget)
+        self.ui.app.root.geometry('1000x760')
+        self.ui.app.root.update()
+        panel = self.ui.radar
+        labels = [str(child.widget.cget('text')) for child in panel.details_button.parent._children]
+        self.assertIn('Fit',labels)
+        self.assertIn('+',labels)
+        self.assertIn('Connection details',labels)
+        texts = []
+        def collect(parent):
+            for child in getattr(parent,'_children',[]):
+                if 'text' in child.widget.keys():
+                    texts.append(str(child.widget.cget('text')))
+                collect(child)
+        collect(self.ui.map.parent)
+        self.assertFalse(any('Universal Blue radar palette' in text for text in texts))
+        self.assertNotIn('RainViewer',texts)
+        button = panel.details_button.widget
+        self.assertLessEqual(button.winfo_rootx()+button.winfo_width(),
+                             self.ui.map.parent.widget.winfo_rootx()+self.ui.map.parent.widget.winfo_width())

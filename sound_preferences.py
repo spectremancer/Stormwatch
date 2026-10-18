@@ -13,7 +13,8 @@ class SoundPreferences:
         selection = getattr(self.profile,channel+'_events')
         self.window = Window(owner.app,f'{channel.title()} events · {self.profile.name}',width=650,height=720)
         Label(self.window,f'{"Read alerts aloud" if self.speaking else "Play alert.mp3"} for {self.profile.name}',style='Heading.TLabel')
-        Label(self.window,'Speech uses your computer’s local voice and is independent of alert.mp3 and desktop settings.' if self.speaking else
+        Label(self.window,'Speech covers only alerts issued after monitoring starts, using your computer’s local voice.\n'
+              'Existing alerts stay silent. Speech is independent of alert.mp3 and desktop settings.' if self.speaking else
               'Choose which monitored events can play sound. Event monitoring and desktop notifications\n'
               'keep their own settings. The location Sound switch and watch/warning rules must also allow playback.',
               style='Muted.TLabel',wraplength=600)

@@ -109,6 +109,15 @@ class ArchiveTests(unittest.TestCase):
         self.assertEqual(self.store.history_count(),1)
         self.assertEqual(self.store.search_history()[0]['source'],'Stormwatch')
 
+    def test_all_us_omits_area_filter_and_keeps_nationwide_source_label(self):
+        query = ArchiveQuery(self.query.start,self.query.end,'US',self.query.events)
+        self.session.get.return_value = response(dict(features=[feature()]))
+        result = download_recent(query,self.store,parse,session=self.session,now=self.now)
+        self.assertEqual(result['imported'],1)
+        self.assertNotIn('area',self.session.get.call_args.kwargs['params'])
+        self.assertEqual(self.session.get.call_args.kwargs['params']['event'],self.query.events)
+        self.assertEqual(self.store.search_history()[0]['locations'],'NWS archive · US')
+
     def test_existing_history_schema_migrates_without_losing_records(self):
         self.store.observe(parse(feature()))
         self.store.connection.execute('ALTER TABLE history_events DROP COLUMN source')
@@ -247,6 +256,17 @@ class DownloadGuiTests(unittest.TestCase):
         self.assertIsNone(self.panel.download_future)
         self.assertIn('seven-day',dialog.message.get())
         self.assertFalse(dialog.busy)
+
+    def test_all_us_selection_requests_nationwide_history(self):
+        session = MagicMock()
+        session.get.return_value = response(dict(features=[feature()]))
+        with patch('historical_alerts.requests.Session',return_value=session):
+            dialog = self.open()
+            dialog.state.set('All US')
+            dialog.download_button.invoke()
+            self.pump(lambda:not dialog.busy)
+        self.assertNotIn('area',session.get.call_args.kwargs['params'])
+        self.assertEqual(self.panel.rows[0]['locations'],'NWS archive · US')
 
     def test_close_while_http_request_is_pending_cancels_without_blocking_gui(self):
         started, release = threading.Event(), threading.Event()

@@ -27,7 +27,7 @@ from history_panel import HistoryPanel
 from radar_panel import RadarPanel
 from sound_preferences import SoundPreferences
 from notification_explanations import decisions, explanation_text
-from speech import SpeechService, SpeechCancelled, announcement
+from speech import SpeechService, SpeechCancelled, announcement, issued_after
 from metrics import Metrics
 
 EVENT_FAMILIES = (
@@ -73,6 +73,7 @@ class StormwatchApp:
         self.speech_future = None
         self.speech_pending = {}
         self.speech_current = None
+        self.speech_started_at = None
         self.cancel_since = datetime.now(timezone.utc) - timedelta(minutes=15)
         self.loading_profile = False
         self.tray_ready = False
@@ -161,7 +162,7 @@ class StormwatchApp:
         Button(tools, "−", lambda: self.map.zoom(1 / 1.5))
         Button(tools, "Fit", lambda: self.map.fit())
         self.map = AlertMap(map_page, self.open_alert)
-        self.radar = RadarPanel(map_page,self.map)
+        self.radar = RadarPanel(map_page,self.map,connection_tools=tools)
         map_note = Label(map_page, "NWS polygons and zone outlines; alerts without boundaries remain in Active alerts.\n"
               "Pin matching: storm polygon, or resolved NWS zones.", style="Muted.TLabel", wraplength=500)
         map_note.widget.bind('<Configure>',lambda e:map_note.configure(wraplength=max(200,e.width)))
@@ -412,6 +413,8 @@ class StormwatchApp:
             if not self.set_refresh_interval(self.refresh_interval_picker.get()):
                 return
             self.running = True
+            self.speech_started_at = datetime.now(timezone.utc)
+            self.speech_pending.clear()
             self.refresh_interval_picker.disable()
             self.toggle.set("Pause monitoring")
             self.state.set("●  MONITORING")
@@ -504,14 +507,19 @@ class StormwatchApp:
                                 messages.append((previous,status,[]))
                     end = instant(alert.get("ends") or alert.get("expires"))
                     expired = end and end <= datetime.now(timezone.utc)
+                    speech_baseline = not issued_after(alert,self.speech_started_at)
                     for profile in matched or prior_matches:
                         quiet = legacy or (not self.initialized and alert["event"] not in CRITICAL)
-                        choices = decisions(profile,alert,kind,quiet,legacy)
+                        choices = decisions(profile,alert,kind,quiet,legacy,speech_baseline=speech_baseline)
                         for channel,choice in choices.items():
                             self.history.record_decision(alert['id'],version,profile,channel,**choice)
                             enabled = profile in matched and profile.allows(alert,channel)
                             if enabled and not (expired and alert.get('message_type') != 'Cancel') and not (channel in ('sound','speech') and (expired or kind == 'Cancelled')):
-                                if self.history.schedule(alert["id"], version, profile.id, channel, quiet,choice['reason']):
+                                channel_quiet = (legacy or speech_baseline) if channel == 'speech' else quiet
+                                if channel == 'speech' and channel_quiet:
+                                    self.history.suppress_delivery(alert['id'],version,profile.id,channel,choice['reason'])
+                                    continue
+                                if self.history.schedule(alert["id"], version, profile.id, channel, channel_quiet,choice['reason']):
                                     jobs.append((alert, version, profile.id, channel, kind))
             self.append_alerts(messages)
             if len(batch) == 20:
@@ -548,6 +556,8 @@ class StormwatchApp:
             with (nullcontext() if channel == 'speech' else self.sound_lock):
                 if not self.running or generation != self.generation:
                     break
+                if channel == 'speech' and not issued_after(alert,self.speech_started_at):
+                    continue
                 if not self.history.is_current(alert_id, version):
                     continue
                 if channel in ('sound','speech') and self.history.get_alert(alert_id)['status'] != 'Active':
@@ -693,6 +703,9 @@ class StormwatchApp:
             self.status.set("Only failed channels can be retried; successful submissions will not be replayed.")
             return
         if row['channel'] == 'speech':
+            if not issued_after(row['alert'],self.speech_started_at):
+                self.status.set('Speech only covers alerts issued after this monitoring session started.')
+                return
             self.speech_pending.pop((row['id'],row['version']),None)
             self.speech_busy = True
             self.speech_current = (row['id'],row['version'])

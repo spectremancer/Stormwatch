@@ -5,7 +5,7 @@ from alert_history import instant, version_of
 CHANNELS = ('sound','desktop','speech')
 
 
-def decisions(profile, alert, kind='New', quiet=False, legacy=False, now=None):
+def decisions(profile, alert, kind='New', quiet=False, legacy=False, now=None, speech_baseline=None):
     matched, match_reason = profile.explain_match(alert)
     end = instant(alert.get('ends') or alert.get('expires'))
     expired = end and end <= (now or datetime.now(timezone.utc))
@@ -29,7 +29,11 @@ def decisions(profile, alert, kind='New', quiet=False, legacy=False, now=None):
                 reason = base+f'This event is excluded by the {channel} event filter.'
             elif not profile.allows(alert,channel):
                 reason = base+f'The watch/warning {channel} rule is off.'
-            elif quiet:
+            elif channel == 'speech' and speech_baseline:
+                reason = base+'Speech only covers alerts issued after this monitoring session started. Existing alerts or alerts without a valid issue time stay silent.'
+            # A supplied baseline flag enables the session-time speech policy;
+            # the older non-critical startup mute still governs other channels.
+            elif quiet and (channel != 'speech' or legacy or speech_baseline is None):
                 reason = base+('Legacy history is treated as a quiet baseline.' if legacy else
                               'Quiet startup: existing non-tornado/hurricane alerts do not notify on the first refresh.')
             else:

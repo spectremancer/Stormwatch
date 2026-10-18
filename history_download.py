@@ -35,13 +35,13 @@ class HistoryDownload:
         self.end = TextInput(dates,str(today),width=12)
         Label(self.window,'Dates use your local calendar: YYYY-MM-DD.',style='Muted.TLabel')
         area = self.window.row(padding=0)
-        Label(area,'State / territory')
+        Label(area,'Coverage')
         states = self.owner.profile.states
-        self.state = Dropdown(area,['Choose state']+sorted(STATE_CODES),
+        self.state = Dropdown(area,['Choose state','All US']+sorted(STATE_CODES),
                               value=states[0] if states else 'Choose state',width=14)
         options = list(EVENTS) + sorted(set(self.owner.profile.events))
         self.event = Dropdown(self.window,options,value='Tornado watches and warnings')
-        self.message = Label(self.window,'Choose dates, a state and event types, then download.',
+        self.message = Label(self.window,'Choose dates, coverage and event types, then download.',
                              style='Muted.TLabel',wraplength=550)
         tools = self.window.row(padding=0)
         self.download_button = Button(tools,'Download to History',self.start_download)
@@ -53,7 +53,8 @@ class HistoryDownload:
         if self.busy:
             return
         event = self.event.get()
-        query = ArchiveQuery(self.start.get().strip(),self.end.get().strip(),self.state.get(),EVENTS.get(event,event))
+        state = 'US' if self.state.get() == 'All US' else self.state.get()
+        query = ArchiveQuery(self.start.get().strip(),self.end.get().strip(),state,EVENTS.get(event,event))
         try:
             query.parameters()
         except ValueError as error:
@@ -91,7 +92,7 @@ class HistoryDownload:
         message = (f"Imported {result['imported']:,} changes · {result['duplicates']:,} already recorded · "
                    f"{result['skipped']:,} unsupported/test messages skipped. No live notifications sent.")
         if not result['received']:
-            message = 'NWS returned no alerts for these dates, state and event types. No records were added.'
+            message = 'NWS returned no alerts for these dates, coverage and event types. No records were added.'
         self.panel.message.set(message)
         if not self.window._closed:
             self.message.set(message)

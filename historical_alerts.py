@@ -33,15 +33,17 @@ class ArchiveQuery:
         if first < earliest.astimezone().date() or last > now.astimezone().date():
             raise ValueError('NWS only provides a rolling seven-day archive. Choose recent dates through today.')
         state = self.state.strip().upper()
-        if state not in STATE_CODES:
-            raise ValueError('Choose one US state or territory to download.')
+        if state != 'US' and state not in STATE_CODES:
+            raise ValueError('Choose All US or a US state/territory to download.')
         if self.events and any(not event.endswith((' Warning',' Watch')) or
                                not all(c.isascii() and (c.isalnum() or c == ' ') for c in event)
                                for event in self.events.split(',')):
             raise ValueError('Choose valid NWS watch or warning names.')
         start = max(datetime.combine(first,time.min).astimezone(timezone.utc),earliest)
         end = min(datetime.combine(last+timedelta(days=1),time.min).astimezone(timezone.utc),now)
-        params = dict(start=start.isoformat(),end=end.isoformat(),area=state,status='actual',limit=500)
+        params = dict(start=start.isoformat(),end=end.isoformat(),status='actual',limit=500)
+        if state != 'US':
+            params['area'] = state
         if self.events:
             params['event'] = self.events
         return params

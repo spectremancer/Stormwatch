@@ -3,10 +3,20 @@ import platform
 import shutil
 import subprocess
 import threading
+from datetime import datetime
 
 
 class SpeechCancelled(RuntimeError):
     pass
+
+
+def issued_after(alert, started_at):
+    """Only authoritative, timezone-aware issue times can qualify for live speech."""
+    try:
+        issued = datetime.fromisoformat(alert.get('sent','').replace('Z','+00:00'))
+    except (ValueError,TypeError,AttributeError):
+        return False
+    return bool(started_at and issued.tzinfo is not None and issued>started_at)
 
 
 def announcement(alert, profiles, kind='New'):

@@ -1,4 +1,5 @@
 import json
+from datetime import datetime, timedelta, timezone
 import os
 from pathlib import Path
 import subprocess
@@ -13,11 +14,19 @@ from alert_history import AlertHistory
 from locations import LocationProfile
 from main import StormwatchApp
 from notification_explanations import decisions, explanation_text
-from speech import SpeechService, SpeechCancelled, announcement, command
+from speech import SpeechService, SpeechCancelled, announcement, command, issued_after
 from test_dashboard import alert
 
 
 class SpeechRuleTests(unittest.TestCase):
+    def test_session_cutoff_requires_a_new_timezone_aware_issue_time(self):
+        started = datetime(2026,10,18,11,tzinfo=timezone.utc)
+        self.assertTrue(issued_after(alert(sent='2026-10-18T06:00:01-05:00'),started))
+        for sent in ('2026-10-18T11:00:00Z','2026-10-18T10:59:59Z','2026-10-18T12:00:00',None,'Unknown'):
+            with self.subTest(sent=sent):
+                self.assertFalse(issued_after(alert(sent=sent),started))
+        self.assertFalse(issued_after(alert(sent='2026-10-18T12:00:00Z'),None))
+
     def test_legacy_profiles_stay_silent_and_speech_is_independent(self):
         legacy = LocationProfile.from_json(json.dumps({'name':'Home'}))
         self.assertFalse(legacy.speech)
@@ -127,6 +136,9 @@ class ExplanationSpeechGuiTests(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
         self.ui = StormwatchApp(Mock(interval=60),AlertHistory(Path(self.directory.name)/'history.db'))
+        # Most tests model an already-running session before the fixture's
+        # 10:00 UTC issue time. Startup regressions below use the real Start action.
+        self.ui.speech_started_at = datetime(2026,10,16,9,tzinfo=timezone.utc)
         self.ui.app.root.update()
         self.voice = patch.object(self.ui.speaker,'speak').start()
         self.addCleanup(patch.stopall)
@@ -148,6 +160,7 @@ class ExplanationSpeechGuiTests(unittest.TestCase):
     def receive(self, items, wait_voice=True):
         self.ui.running = True
         self.ui.received(self.ui.generation,({a['id']:a for a in items},''))
+        self.pump(lambda:not self.ui.busy)
         self.pump(lambda:not self.ui.delivery_busy)
         if wait_voice:
             self.pump(lambda:not self.ui.speech_busy and not self.ui.speech_pending)
@@ -166,6 +179,75 @@ class ExplanationSpeechGuiTests(unittest.TestCase):
         self.assertIn('Submitted',text)
         self.ui.delivery_panel.refresh()
         self.assertIn('Why this notification:',self.ui.delivery_panel.details.get())
+
+    def test_startup_backlog_is_silent_and_only_post_start_alerts_are_spoken(self):
+        self.ui.profile.speech = True
+        with patch.object(self.ui,'poll'):
+            self.ui.toggle_monitoring()
+        started = self.ui.speech_started_at
+        backlog = [alert(id=f'old-{i}',sent=(started-timedelta(hours=1)).isoformat()) for i in range(40)]
+        self.receive(backlog)
+        self.voice.assert_not_called()
+        self.assertFalse(self.ui.speech_pending)
+        receipts = [r for r in self.ui.history.delivery_rows(limit=500) if r['channel']=='speech']
+        self.assertEqual(len(receipts),40)
+        self.assertTrue(all(r['state']=='skipped' for r in receipts))
+        self.assertTrue(all('after this monitoring session started' in r['reason'] for r in receipts))
+        self.assertEqual(len(self.ui.snapshot),40)
+        self.ui.service.deliver_desktop.assert_called()
+        new = alert(id='new',sent=(started+timedelta(microseconds=1)).isoformat())
+        self.receive(backlog+[new])
+        self.voice.assert_called_once()
+        self.assertEqual(next(r for r in self.ui.history.delivery_rows(limit=500)
+                              if r['id']=='new' and r['channel']=='speech')['state'],'sent')
+
+    def test_new_alert_on_first_refresh_is_spoken_but_unknown_issue_time_is_not(self):
+        self.ui.profile.speech = True
+        with patch.object(self.ui,'poll'):
+            self.ui.toggle_monitoring()
+        started = self.ui.speech_started_at
+        self.receive([alert(id='unknown',sent='Unknown'),
+                      alert(id='new',sent=(started+timedelta(microseconds=1)).isoformat())])
+        self.voice.assert_called_once()
+        rows = [r for r in self.ui.history.delivery_rows() if r['channel']=='speech']
+        self.assertEqual({r['id']:r['state'] for r in rows},{'new':'sent','unknown':'skipped'})
+
+    def test_restart_retires_failed_speech_and_establishes_a_new_cutoff(self):
+        self.ui.profile.speech = True
+        with patch.object(self.ui,'poll'):
+            self.ui.toggle_monitoring()
+        first_start = self.ui.speech_started_at
+        a = alert(id='earlier-session',sent=(first_start+timedelta(microseconds=1)).isoformat())
+        self.voice.side_effect = RuntimeError('voice offline')
+        self.receive([a])
+        old = next(r for r in self.ui.history.delivery_rows() if r['channel']=='speech')
+        self.assertEqual(old['state'],'failed')
+        self.ui.toggle_monitoring()
+        with patch.object(self.ui,'poll'):
+            self.ui.toggle_monitoring()
+        self.assertGreater(self.ui.speech_started_at,first_start)
+        self.voice.side_effect = None
+        self.receive([a])
+        self.voice.assert_called_once()
+        receipt = self.ui.history.delivery(old['id'],old['version'],old['profile'],'speech')
+        self.assertEqual(receipt['state'],'skipped')
+        # Even a stale job retained outside the normal queue cannot play.
+        self.ui.send_notifications(self.ui.generation,[(a,old['version'],old['profile'],'speech','New')],True)
+        self.voice.assert_called_once()
+        new = alert(id='after-resume',sent=(self.ui.speech_started_at+timedelta(microseconds=1)).isoformat())
+        self.receive([a,new])
+        self.assertEqual(self.voice.call_count,2)
+
+    def test_new_noncritical_event_on_first_refresh_uses_speech_session_policy(self):
+        self.ui.profile.speech = True
+        self.ui.profile.speech_events = None
+        self.ui.choices['Flood Warning'].set(True)
+        with patch.object(self.ui,'poll'):
+            self.ui.toggle_monitoring()
+        self.receive([alert(event='Flood Warning',sent=(self.ui.speech_started_at+timedelta(microseconds=1)).isoformat())])
+        self.voice.assert_called_once()
+        self.ui.service.deliver_sound.assert_not_called()
+        self.ui.service.deliver_desktop.assert_not_called()
 
     def test_speech_is_deduplicated_per_version_and_overlap(self):
         self.ui.profile.speech = True

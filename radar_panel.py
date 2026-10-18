@@ -1,13 +1,12 @@
 """Opt-in radar controls. Tk stays on the main thread; requests stay in workers."""
 from datetime import datetime, timezone
-import webbrowser
 
 from TkFlow import Button, Checkbox, Label, TextArea, Window
 from radar import RadarService, error_description
 
 
 class RadarPanel:
-    def __init__(self, parent, alert_map, service=None):
+    def __init__(self, parent, alert_map, service=None, connection_tools=None):
         self.app, self.map = parent.app, alert_map
         self.service = service or RadarService()
         self.frames = []
@@ -24,15 +23,12 @@ class RadarPanel:
         self.previous = Button(tools,'Previous frame',lambda: self.step(-1))
         self.next = Button(tools,'Next frame',lambda: self.step(1))
         self.refresh_button = Button(tools,'Refresh radar',lambda:self.refresh(force=True))
+        self.details_button = Button(connection_tools or tools,'Connection details',self.show_details)
         status_holder = parent.column(padding=0)
         status_holder.widget.configure(height=52)
         status_holder.widget.grid_propagate(False)
         self.status = Label(status_holder,'Radar off · Alert monitoring works independently.',style='Muted.TLabel',wraplength=740,expand=True,fill='both',anchor='nw')
         self.status.widget.bind('<Configure>',lambda e:self.status.configure(wraplength=max(200,e.width)))
-        legend = parent.row(padding=0)
-        Label(legend,'Universal Blue radar palette · Smoothed · Separate snow colors',style='Muted.TLabel',expand=True,wraplength=180)
-        Button(legend,'RainViewer',lambda:webbrowser.open('https://www.rainviewer.com'))
-        Button(legend,'Connection details',self.show_details)
         self.map.on_view_changed = self.view_changed
         self.update_buttons()
 
@@ -153,12 +149,12 @@ class RadarPanel:
         latest_age = datetime.now(timezone.utc).timestamp()-self.frames[-1][0]
         state = 'STALE RADAR' if latest_age > 1200 or self.error else 'Past radar'
         generated = datetime.fromtimestamp(stamp,timezone.utc)
-        self.status.set(f'{state} · Frame generated {generated:%Y-%m-%d %H:%M UTC} · {age} min ago · Frame {self.index+1}/{len(self.frames)}'+
+        self.status.set(f'RainViewer · {state} · Frame generated {generated:%Y-%m-%d %H:%M UTC} · {age} min ago · Frame {self.index+1}/{len(self.frames)}'+
                         (f' · {self.error}: {self.diagnostic}' if self.error else '')+' · Radar coverage can be incomplete.')
 
     def show_details(self):
         window = Window(self.app,'Radar connection details',width=690,height=480)
-        Label(window,'Radar connection',style='Heading.TLabel')
+        Label(window,'RainViewer radar connection',style='Heading.TLabel')
         text = TextArea(window,readonly=True,expand=True,fill='both',bg='#101c30',fg='#e5edf8',padx=12,pady=12)
         text.set(f"Last attempt: {self.last_attempt:%Y-%m-%d %H:%M:%S UTC}\n" if self.last_attempt else 'No connection attempt yet.\n')
         text.append(f"\n{self.diagnostic or ('Recent radar imagery loaded successfully.' if self.frames else 'Enable Show recent radar on the map to connect.')}\n\n"
@@ -170,7 +166,8 @@ class RadarPanel:
                     'If using a Windows executable, rebuild from the current source with main.spec; an older EXE '
                     'does not include these changes.\n\n'
                     'Alert monitoring continues independently. Retained imagery always keeps its original timestamp.')
-        text.append('\n\nRainViewer timestamps describe frame generation. A composite frame may contain radar '
+        text.append('\n\nRadar imagery: RainViewer · https://www.rainviewer.com\n'
+                    'RainViewer timestamps describe frame generation. A composite frame may contain radar '
                     'readings from different observation times. Tile options: 256 pixels, zoom at most 7, '
                     'Universal Blue (2), smoothing on and separate snow colors on (1_1).')
         Button(window,'Close',window.close)
