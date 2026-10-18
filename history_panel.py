@@ -55,6 +55,7 @@ class HistoryPanel:
         categories = parent.row(padding=0, spacing=6)
         self.location = Dropdown(categories, ['All locations'], width=17, expand=True)
         self.event = Dropdown(categories, ['All event types'], editable=True, width=23, expand=True)
+        self.event.bind('<Return>', lambda _: self.apply())
         self.kind = Dropdown(categories, ['All changes','New','Updated','Extended','Cancelled','Expired','No longer active'], width=17)
         dates = parent.row(padding=0, spacing=5)
         Label(dates, 'From')
@@ -70,7 +71,7 @@ class HistoryPanel:
         self.table = HistoryTable(parent, self.selected)
         self.details = TextArea(parent, readonly=True, autoscroll=False, height=4, bg='#101c30', fg='#e5edf8', padx=12, pady=10)
         self.open_button = Button(parent, 'View selected alert', self.open_selected)
-        self.message = Label(parent, 'Dates: YYYY-MM-DD · Search, then export all matching records.', style='Muted.TLabel', wraplength=760)
+        self.message = Label(parent, 'Event filter accepts partial names, e.g. tornado · Dates: YYYY-MM-DD.', style='Muted.TLabel', wraplength=760)
         self.refresh()
 
     def apply(self):

@@ -111,9 +111,11 @@ class HistoryArchive:
         if filters.location:
             clauses.append('EXISTS (SELECT 1 FROM history_locations l WHERE l.sequence=e.sequence AND l.name=?)')
             values.append(filters.location)
-        if filters.event:
-            clauses.append('e.event=?')
-            values.append(filters.event)
+        if filters.event.strip():
+            event = filters.event.strip().casefold()
+            literal = event.replace('\\','\\\\').replace('%','\\%').replace('_','\\_')
+            clauses.append("e.event LIKE ? ESCAPE '\\'")
+            values.append('%'+literal+'%')
         if filters.kind:
             clauses.append('e.kind=?')
             values.append(filters.kind)

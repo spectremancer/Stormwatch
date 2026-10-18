@@ -369,11 +369,16 @@ is a current-session view; the **History** tab retains previous alert changes.
 
 **History** provides a paginated archive of alert versions and lifecycle changes.
 Search across event names, headlines, areas, descriptions, and instructions.
-Filter by recorded location name, exact event type, change (new, updated,
+Filter by recorded location name, event type, change (new, updated,
 extended, cancelled, expired, or no longer active), date range, and latest
 channel result (submitted, failed, pending, suppressed, or no notifications).
 Use **Search** to apply filters and **Clear filters** to reset them. Delivery
 results reflect current receipts, not a log of every individual retry.
+The editable event-type filter accepts case-insensitive partial names: typing
+`tornado` matches both **Tornado Warning** and **Tornado Watch**. You can also
+choose a full event name from the dropdown. Search and CSV export use the same
+filters. History searches only alerts already recorded by Stormwatch; it does
+not download past events from NWS.
 
 Dates are inclusive local-calendar dates entered as `YYYY-MM-DD`. New entries
 use the time Stormwatch observed the change. Each version retains location names

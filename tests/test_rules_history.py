@@ -80,6 +80,29 @@ class HistoryTests(unittest.TestCase):
         self.store.delete_profile(self.home.id)
         self.assertEqual(self.store.history_count(HistoryFilter(location='Home')),2)
 
+    def test_tornado_search_matches_event_names_in_text_and_typed_event_filter(self):
+        for identifier, event in (('warning','Tornado Warning'), ('watch','Tornado Watch'),
+                                  ('flood','Flood Warning')):
+            self.store.observe(alert(id=identifier,event=event,headline='Take action',
+                                     description='',instruction=''),locations=[self.home])
+        for filters in (HistoryFilter(text='TORNADO'), HistoryFilter(event='tornado'),
+                        HistoryFilter(event='  ToRnAdO  ')):
+            with self.subTest(filters=filters):
+                self.assertEqual({r['id'] for r in self.store.search_history(filters)}, {'warning','watch'})
+                self.assertEqual(self.store.history_count(filters),2)
+        self.assertEqual([r['id'] for r in self.store.search_history(HistoryFilter(event='tornado warning'))],
+                         ['warning'])
+        target = Path(self.directory.name)/'tornado.csv'
+        self.assertEqual(self.store.export_history(target,HistoryFilter(event='tornado')),2)
+        with target.open(encoding='utf-8-sig',newline='') as source:
+            self.assertEqual({r['alert_id'] for r in csv.DictReader(source)}, {'warning','watch'})
+
+    def test_typed_event_search_treats_wildcards_and_sql_as_literal_text(self):
+        self.store.observe(alert(),locations=[self.home])
+        for query in ('%', '_', '\\', "' OR 1=1 --"):
+            with self.subTest(query=query):
+                self.assertEqual(self.store.history_count(HistoryFilter(event=query)),0)
+
     def test_export_includes_all_filtered_pages_and_quotes_external_text(self):
         for i in range(115):
             self.store.observe(alert(id=str(i),headline='=HYPERLINK("bad")',instruction='line one\nline two, quoted'),
@@ -196,6 +219,24 @@ class CombinedNotificationTests(unittest.TestCase):
         self.assertTrue(all(r['state']=='sent' for r in self.owner.history.delivery_rows()))
         self.assertEqual(self.owner.history.history_count(),1)
         self.assertEqual(set(self.owner.history.search_history()[0]['locations'].split(',')),{'Home','Work'})
+
+    def test_history_panel_finds_tornado_watch_and_warning_by_typed_event(self):
+        for identifier,event in (('warning','Tornado Warning'),('watch','Tornado Watch'),('flood','Flood Warning')):
+            self.owner.history.observe(alert(id=identifier,event=event),locations=[self.owner.profile])
+        panel = self.owner.history_panel
+        panel.refresh()
+        self.assertIn('Tornado Warning',panel.event.values)
+        self.assertIn('Tornado Watch',panel.event.values)
+        panel.event.set('ToRnAdO')
+        panel.apply()
+        self.assertEqual({r['id'] for r in panel.rows},{'warning','watch'})
+        self.assertEqual(panel.event.get(),'ToRnAdO')
+        self.assertEqual(panel.counter.get(),'1–2 of 2 changes')
+        panel.clear()
+        self.assertEqual(len(panel.rows),3)
+        panel.text.set('TORNADO')
+        panel.apply()
+        self.assertEqual({r['id'] for r in panel.rows},{'warning','watch'})
 
     def test_rules_are_applied_before_grouping_and_do_not_hide_cards(self):
         home=next(p for p in self.owner.profiles if p.name=='Home')
