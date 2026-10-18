@@ -58,6 +58,8 @@ class HistoryArchive:
             ''')
             if 'summary' not in {row[1] for row in self.connection.execute('PRAGMA table_info(history_events)')}:
                 self.connection.execute("ALTER TABLE history_events ADD COLUMN summary TEXT NOT NULL DEFAULT ''")
+            if 'source' not in {row[1] for row in self.connection.execute('PRAGMA table_info(history_events)')}:
+                self.connection.execute("ALTER TABLE history_events ADD COLUMN source TEXT NOT NULL DEFAULT 'Stormwatch'")
             marker = self.connection.execute("SELECT data FROM settings WHERE name='archive_initialized'").fetchone()
             if not marker:
                 for row in self.connection.execute('SELECT * FROM versions').fetchall():
@@ -76,7 +78,7 @@ class HistoryArchive:
                                         'Issued (imported)' if stamp else 'Unknown (imported)')
                 self.connection.execute("INSERT OR REPLACE INTO settings VALUES ('archive_initialized','true')")
 
-    def _archive_event(self, alert, version, kind, locations=None, stamp=None, basis='Observed', summary=''):
+    def _archive_event(self, alert, version, kind, locations=None, stamp=None, basis='Observed', summary='', source='Stormwatch'):
         if stamp is None:
             stamp = datetime.now(timezone.utc).isoformat()
         existing = self.connection.execute('SELECT sequence FROM history_events WHERE id=? AND version=? AND kind=?',
@@ -85,9 +87,9 @@ class HistoryArchive:
             sequence = existing[0]
         else:
             cursor = self.connection.execute('''INSERT INTO history_events
-                (id,version,kind,recorded_at,time_basis,data,search_text,event,summary) VALUES (?,?,?,?,?,?,?,?,?)''',
+                (id,version,kind,recorded_at,time_basis,data,search_text,event,summary,source) VALUES (?,?,?,?,?,?,?,?,?,?)''',
                 (alert['id'], version, kind, stamp, basis, json.dumps(alert),
-                 ' '.join(str(alert.get(k,'')) for k in ('event','headline','area','description','instruction')).casefold(), alert['event'], summary))
+                 ' '.join(str(alert.get(k,'')) for k in ('event','headline','area','description','instruction')).casefold(), alert['event'], summary, source))
             sequence = cursor.lastrowid
         if locations is None:
             inherited = self.connection.execute('''SELECT h.profile,h.name FROM history_locations h
@@ -99,6 +101,34 @@ class HistoryArchive:
             name = profile['name'] if isinstance(profile, dict) else profile.name
             self.connection.execute('INSERT OR IGNORE INTO history_locations VALUES (?,?,?)', (sequence,profile_id,name))
         return sequence
+
+    def import_archive(self, alerts, state, cancel):
+        from alert_history import instant, version_of
+        from historical_alerts import DownloadCancelled
+        imported = 0
+        with self.transaction():
+            # The history browser orders by insertion sequence. Import oldest
+            # first so the most recently issued downloaded alerts appear first.
+            for alert in sorted(alerts,key=lambda a:instant(a.get('sent')) or datetime.min.replace(tzinfo=timezone.utc)):
+                if cancel.is_set():
+                    raise DownloadCancelled('Download cancelled. No archive records were imported.')
+                sent = instant(alert.get('sent'))
+                raw_sent = alert.get('sent','')
+                if sent is None or datetime.fromisoformat(raw_sent.replace('Z','+00:00')).tzinfo is None:
+                    raise ValueError('An archive alert has no valid issue time; no records were imported.')
+                version = version_of(alert)
+                if self.connection.execute('SELECT 1 FROM history_events WHERE id=? AND version=?',
+                                           (alert['id'],version)).fetchone():
+                    continue
+                kind = {'Update':'Updated','Cancel':'Cancelled'}.get(alert.get('message_type'),'New')
+                self._archive_event(alert,version,kind,
+                    [dict(id='nws-archive:'+state,name='NWS archive · '+state)],
+                    sent.isoformat(),'Issued (NWS archive)',
+                    'Downloaded from the NWS archive; not a live monitoring observation.',source='NWS API archive')
+                imported += 1
+            if cancel.is_set():
+                raise DownloadCancelled('Download cancelled. No archive records were imported.')
+        return imported
 
     @staticmethod
     def _archive_where(filters, before=None):
@@ -180,7 +210,7 @@ class HistoryArchive:
                 temporary = Path(output.name)
                 writer = csv.writer(output)
                 writer.writerow(('alert_id','version','change','recorded_at_utc','time_basis','event','locations','area',
-                                 'severity','issued_at','expires_at','current_status','channel_results','headline','instruction','url','change_summary'))
+                                 'severity','issued_at','expires_at','current_status','channel_results','headline','instruction','url','change_summary','source'))
                 while True:
                     rows = cursor.fetchmany(250)
                     if not rows:
@@ -189,7 +219,7 @@ class HistoryArchive:
                         a = json.loads(row['data'])
                         writer.writerow(csv_cell(v) for v in (row['id'],row['version'],row['kind'],row['recorded_at'],
                             row['time_basis'],a['event'],row['locations'],a.get('area'),a.get('severity'),a.get('sent'),
-                            a.get('ends') or a.get('expires'),row['current_status'],row['outcomes'],a.get('headline'),a.get('instruction'),a.get('url'),row['summary']))
+                            a.get('ends') or a.get('expires'),row['current_status'],row['outcomes'],a.get('headline'),a.get('instruction'),a.get('url'),row['summary'],row['source']))
                         count += 1
             os.replace(temporary, target)
             return count

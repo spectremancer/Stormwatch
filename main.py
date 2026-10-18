@@ -897,6 +897,7 @@ class StormwatchApp:
         self.speech_pending.clear()
         self.speaker.stop()
         self.radar.close()
+        self.history_panel.cancel_download()
         self.app.root._stormwatch_icons.clear()
         self.app.close()
         self.cleanup_thread = threading.Thread(target=self.cleanup, daemon=True)

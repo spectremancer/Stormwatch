@@ -5,6 +5,7 @@ from TkFlow import Button, Dropdown, Label, TextArea, TextInput
 from TkFlow.widget import Widget
 from delivery_panel import local_time
 from history_store import HistoryFilter
+from history_download import HistoryDownload
 
 
 class HistoryTable(Widget):
@@ -44,9 +45,11 @@ class HistoryPanel:
         self.rows = []
         self.future = None
         self.exporting = False
-        Label(parent, 'Alert history', style='Heading.TLabel')
-        Label(parent, 'Search past alert changes. Dates use your local calendar; imported entries may use NWS issue time.',
-              style='Muted.TLabel', wraplength=760)
+        self.download_future = None
+        self.downloader = None
+        heading = parent.row(padding=0)
+        Label(heading, 'Alert history', style='Heading.TLabel',expand=True)
+        self.download_button = Button(heading, 'Download recent alerts', self.open_download)
         search = parent.row(padding=0)
         self.text = TextInput(search, expand=True)
         self.text.bind('<Return>', lambda _: self.apply())
@@ -145,6 +148,7 @@ class HistoryPanel:
             f"What changed: {row['summary'] or 'Change summary unavailable for this older record.'}\n"
             f"{a.get('headline','')}\n{a.get('area','')}\n"
             f"Time basis: {row['time_basis']} · Current alert status: {row['current_status'] or 'Unknown'}\n"
+            f"Source: {row['source']}\n"
             f"{outcome_label(row['outcomes'])}\n{a.get('instruction','')}")
 
     def open_selected(self):
@@ -174,9 +178,24 @@ class HistoryPanel:
         self.export_button.enable()
         self.message.set(f'CSV export failed: {error}')
 
+    def open_download(self):
+        if self.downloader is not None and self.downloader.busy and self.downloader.window._closed:
+            self.message.set('The previous download is cancelling. Wait for it to finish before starting another.')
+            return
+        if self.downloader is not None and not self.downloader.window._closed:
+            self.downloader.window.root.lift()
+            return
+        self.downloader = HistoryDownload(self)
+
+    def cancel_download(self):
+        if self.downloader is not None:
+            self.downloader.cancel.set()
+
     def close(self):
-        if self.future is not None:
-            try:
-                self.future.result()
-            except Exception:
-                pass
+        self.cancel_download()
+        for future in (self.future,self.download_future):
+            if future is not None:
+                try:
+                    future.result()
+                except Exception:
+                    pass

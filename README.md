@@ -377,8 +377,33 @@ results reflect current receipts, not a log of every individual retry.
 The editable event-type filter accepts case-insensitive partial names: typing
 `tornado` matches both **Tornado Warning** and **Tornado Watch**. You can also
 choose a full event name from the dropdown. Search and CSV export use the same
-filters. History searches only alerts already recorded by Stormwatch; it does
-not download past events from NWS.
+filters. History searches alerts recorded locally, including optional NWS downloads.
+
+Use **Download recent alerts** in History to fetch past NWS watches and warnings.
+Choose inclusive local dates, one state/territory, and event types (including
+tornado watches and warnings together). Downloads are opt-in and run separately
+from live monitoring. **Cancel download** stops after the current request; closing
+the dialog or quitting also requests cancellation.
+
+The official NWS API provides a **rolling archive of roughly seven days**, not a
+multi-year historical database. Older and future dates are rejected; the oldest
+available calendar day can be partial. No matches means NWS returned none for
+that query, not proof no event occurred. Multi-year searches require another
+archive source, which this version does not provide.
+
+All pages must succeed before a single atomic import. Downloads are limited to
+5,000 messages and two minutes between requests; narrow the dates/event type if
+that limit is reached. Failed or cancelled downloads keep no partial import.
+Existing alert versions are skipped. Imported rows show **NWS API archive**, use
+NWS issue time, and carry a **NWS archive · STATE** location label distinct from
+saved monitoring profiles. Search filters reset after import so new records are
+visible. Their NWS message types identify new, updated, or cancelled messages;
+extensions and missing intermediate versions are not inferred.
+
+Downloads populate History only. They never modify active cards, processed IDs,
+live notification decisions or delivery receipts, and never trigger sound,
+desktop notifications or speech. A later live observation can still notify
+normally. Existing locally recorded versions retain their original provenance.
 
 Dates are inclusive local-calendar dates entered as `YYYY-MM-DD`. New entries
 use the time Stormwatch observed the change. Each version retains location names
@@ -399,7 +424,7 @@ Legacy ID-only records have no alert text to import. No history is fabricated.
 all pages. It exports a consistent read snapshot while monitoring continues.
 Columns include alert ID, version, change, time/basis, event, locations, area,
 severity, issue/expiration times, current status, channel results, headline,
-instructions, and official URL. Files use UTF-8 with a BOM for spreadsheet
+instructions, official URL, change summary, and record source. Files use UTF-8 with a BOM for spreadsheet
 compatibility. Text that could be interpreted as a spreadsheet formula is
 escaped. Export cancellation writes nothing; failures preserve an existing
 export. Export cannot overwrite the application database.
