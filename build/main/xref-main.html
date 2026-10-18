@@ -28,6 +28,7 @@ imports:
  &#8226;   <a href="#argparse">argparse</a>
  &#8226;   <a href="#codecs">codecs</a>
  &#8226;   <a href="#collections">collections</a>
+ &#8226;   <a href="#contextlib">contextlib</a>
  &#8226;   <a href="#copyreg">copyreg</a>
  &#8226;   <a href="#dashboard_views">dashboard_views</a>
  &#8226;   <a href="#dataclasses">dataclasses</a>
@@ -169,6 +170,8 @@ imports:
  &#8226;   <a href="#locale">locale</a>
  &#8226;   <a href="#location_wizard">location_wizard</a>
  &#8226;   <a href="#locations">locations</a>
+ &#8226;   <a href="#metrics">metrics</a>
+ &#8226;   <a href="#notification_explanations">notification_explanations</a>
  &#8226;   <a href="#notification_rules">notification_rules</a>
  &#8226;   <a href="#ntpath">ntpath</a>
  &#8226;   <a href="#operator">operator</a>
@@ -180,12 +183,15 @@ imports:
  &#8226;   <a href="#pyi_rth_multiprocessing.py">pyi_rth_multiprocessing.py</a>
  &#8226;   <a href="#pyi_rth_pkgutil.py">pyi_rth_pkgutil.py</a>
  &#8226;   <a href="#pyi_rth_setuptools.py">pyi_rth_setuptools.py</a>
+ &#8226;   <a href="#radar_panel">radar_panel</a>
  &#8226;   <a href="#re">re</a>
  &#8226;   <a href="#re._casefix">re._casefix</a>
  &#8226;   <a href="#re._compiler">re._compiler</a>
  &#8226;   <a href="#re._constants">re._constants</a>
  &#8226;   <a href="#re._parser">re._parser</a>
  &#8226;   <a href="#reprlib">reprlib</a>
+ &#8226;   <a href="#sound_preferences">sound_preferences</a>
+ &#8226;   <a href="#speech">speech</a>
  &#8226;   <a href="#sqlite3">sqlite3</a>
  &#8226;   <a href="#sre_compile">sre_compile</a>
  &#8226;   <a href="#sre_constants">sre_constants</a>
@@ -716,9 +722,11 @@ imported by:
  &#8226;   <a href="#PIL._version">PIL._version</a>
  &#8226;   <a href="#PIL._webp">PIL._webp</a>
  &#8226;   <a href="#PIL.features">PIL.features</a>
+ &#8226;   <a href="#dashboard_views">dashboard_views</a>
  &#8226;   <a href="#desktop">desktop</a>
  &#8226;   <a href="#pystray._darwin">pystray._darwin</a>
  &#8226;   <a href="#pystray._xorg">pystray._xorg</a>
+ &#8226;   <a href="#radar">radar</a>
 
   </div>
 
@@ -1406,6 +1414,7 @@ imported by:
  &#8226;   <a href="#PIL.XpmImagePlugin">PIL.XpmImagePlugin</a>
  &#8226;   <a href="#PIL.features">PIL.features</a>
  &#8226;   <a href="#desktop">desktop</a>
+ &#8226;   <a href="#radar">radar</a>
 
   </div>
 
@@ -1510,7 +1519,7 @@ imports:
 imported by:
     <a href="#PIL">PIL</a>
  &#8226;   <a href="#PIL.ImageDraw2">PIL.ImageDraw2</a>
- &#8226;   <a href="#desktop">desktop</a>
+ &#8226;   <a href="#radar">radar</a>
 
   </div>
 
@@ -1910,6 +1919,8 @@ imports:
 imported by:
     <a href="#PIL">PIL</a>
  &#8226;   <a href="#PIL.SpiderImagePlugin">PIL.SpiderImagePlugin</a>
+ &#8226;   <a href="#dashboard_views">dashboard_views</a>
+ &#8226;   <a href="#desktop">desktop</a>
 
   </div>
 
@@ -3055,6 +3066,7 @@ imported by:
 <span class="moduletype">Package</span>  <div class="import">
 imports:
     <a href="#TkFlow">TkFlow</a>
+ &#8226;   <a href="#TkFlow._tk_lifetime">TkFlow._tk_lifetime</a>
  &#8226;   <a href="#TkFlow.app">TkFlow.app</a>
  &#8226;   <a href="#TkFlow.button">TkFlow.button</a>
  &#8226;   <a href="#TkFlow.checkbox">TkFlow.checkbox</a>
@@ -3079,6 +3091,7 @@ imported by:
     <a href="#TkFlow">TkFlow</a>
  &#8226;   <a href="#TkFlow._helpers">TkFlow._helpers</a>
  &#8226;   <a href="#TkFlow._layout">TkFlow._layout</a>
+ &#8226;   <a href="#TkFlow._tk_lifetime">TkFlow._tk_lifetime</a>
  &#8226;   <a href="#TkFlow._value_widget">TkFlow._value_widget</a>
  &#8226;   <a href="#TkFlow._workers">TkFlow._workers</a>
  &#8226;   <a href="#TkFlow.app">TkFlow.app</a>
@@ -3100,9 +3113,13 @@ imported by:
  &#8226;   <a href="#TkFlow.window">TkFlow.window</a>
  &#8226;   <a href="#delivery_panel">delivery_panel</a>
  &#8226;   <a href="#demo">demo</a>
+ &#8226;   <a href="#history_download">history_download</a>
  &#8226;   <a href="#history_panel">history_panel</a>
  &#8226;   <a href="#location_wizard">location_wizard</a>
  &#8226;   <a href="#main.py">main.py</a>
+ &#8226;   <a href="#metrics">metrics</a>
+ &#8226;   <a href="#radar_panel">radar_panel</a>
+ &#8226;   <a href="#sound_preferences">sound_preferences</a>
 
   </div>
 
@@ -3161,6 +3178,25 @@ imported by:
 </div>
 
 <div class="node">
+  <a name="TkFlow._tk_lifetime"></a>
+  <a target="code" href="///C:/Users/johnp/PycharmProjects/Stormwatch/TkFlow/_tk_lifetime.py" type="text/plain"><tt>TkFlow._tk_lifetime</tt></a>
+<span class="moduletype">SourceModule</span>  <div class="import">
+imports:
+    <a href="#TkFlow">TkFlow</a>
+ &#8226;   <a href="#sys">sys</a>
+ &#8226;   <a href="#threading">threading</a>
+
+  </div>
+  <div class="import">
+imported by:
+    <a href="#TkFlow">TkFlow</a>
+ &#8226;   <a href="#TkFlow.app">TkFlow.app</a>
+
+  </div>
+
+</div>
+
+<div class="node">
   <a name="TkFlow._value_widget"></a>
   <a target="code" href="///C:/Users/johnp/PycharmProjects/Stormwatch/TkFlow/_value_widget.py" type="text/plain"><tt>TkFlow._value_widget</tt></a>
 <span class="moduletype">SourceModule</span>  <div class="import">
@@ -3208,6 +3244,7 @@ imports:
     <a href="#TkFlow">TkFlow</a>
  &#8226;   <a href="#TkFlow._helpers">TkFlow._helpers</a>
  &#8226;   <a href="#TkFlow._layout">TkFlow._layout</a>
+ &#8226;   <a href="#TkFlow._tk_lifetime">TkFlow._tk_lifetime</a>
  &#8226;   <a href="#TkFlow._workers">TkFlow._workers</a>
  &#8226;   <a href="#TkFlow.command">TkFlow.command</a>
  &#8226;   <a href="#__future__">__future__</a>
@@ -3574,6 +3611,7 @@ imported by:
  &#8226;   <a href="#delivery_panel">delivery_panel</a>
  &#8226;   <a href="#history_panel">history_panel</a>
  &#8226;   <a href="#location_wizard">location_wizard</a>
+ &#8226;   <a href="#metrics">metrics</a>
 
   </div>
 
@@ -5697,11 +5735,28 @@ imported by:
 </div>
 
 <div class="node">
+  <a name="alert_changes"></a>
+  <a target="code" href="///C:/Users/johnp/PycharmProjects/Stormwatch/alert_changes.py" type="text/plain"><tt>alert_changes</tt></a>
+<span class="moduletype">SourceModule</span>  <div class="import">
+imports:
+    <a href="#datetime">datetime</a>
+
+  </div>
+  <div class="import">
+imported by:
+    <a href="#alert_history">alert_history</a>
+
+  </div>
+
+</div>
+
+<div class="node">
   <a name="alert_history"></a>
   <a target="code" href="///C:/Users/johnp/PycharmProjects/Stormwatch/alert_history.py" type="text/plain"><tt>alert_history</tt></a>
 <span class="moduletype">SourceModule</span>  <div class="import">
 imports:
-    <a href="#contextlib">contextlib</a>
+    <a href="#alert_changes">alert_changes</a>
+ &#8226;   <a href="#contextlib">contextlib</a>
  &#8226;   <a href="#datetime">datetime</a>
  &#8226;   <a href="#hashlib">hashlib</a>
  &#8226;   <a href="#history_store">history_store</a>
@@ -5717,7 +5772,11 @@ imports:
 imported by:
     <a href="#dashboard_views">dashboard_views</a>
  &#8226;   <a href="#demo">demo</a>
+ &#8226;   <a href="#history_store">history_store</a>
  &#8226;   <a href="#main.py">main.py</a>
+ &#8226;   <a href="#metrics">metrics</a>
+ &#8226;   <a href="#notification_explanations">notification_explanations</a>
+ &#8226;   <a href="#speech">speech</a>
 
   </div>
 
@@ -6547,6 +6606,7 @@ imported by:
  &#8226;   <a href="#importlib.resources.readers">importlib.resources.readers</a>
  &#8226;   <a href="#inspect">inspect</a>
  &#8226;   <a href="#main.py">main.py</a>
+ &#8226;   <a href="#metrics">metrics</a>
  &#8226;   <a href="#multiprocessing.heap">multiprocessing.heap</a>
  &#8226;   <a href="#multiprocessing.pool">multiprocessing.pool</a>
  &#8226;   <a href="#multiprocessing.queues">multiprocessing.queues</a>
@@ -6557,6 +6617,7 @@ imported by:
  &#8226;   <a href="#pprint">pprint</a>
  &#8226;   <a href="#pydoc">pydoc</a>
  &#8226;   <a href="#queue">queue</a>
+ &#8226;   <a href="#radar">radar</a>
  &#8226;   <a href="#requests.compat">requests.compat</a>
  &#8226;   <a href="#requests.sessions">requests.sessions</a>
  &#8226;   <a href="#requests.structures">requests.structures</a>
@@ -6639,6 +6700,7 @@ imported by:
  &#8226;   <a href="#concurrent.futures._base">concurrent.futures._base</a>
  &#8226;   <a href="#concurrent.futures.process">concurrent.futures.process</a>
  &#8226;   <a href="#concurrent.futures.thread">concurrent.futures.thread</a>
+ &#8226;   <a href="#radar">radar</a>
  &#8226;   <a href="#setuptools._distutils.command.build_ext">setuptools._distutils.command.build_ext</a>
 
   </div>
@@ -6780,6 +6842,7 @@ imported by:
  &#8226;   <a href="#importlib.resources._adapters">importlib.resources._adapters</a>
  &#8226;   <a href="#importlib.resources._common">importlib.resources._common</a>
  &#8226;   <a href="#importlib.resources.readers">importlib.resources.readers</a>
+ &#8226;   <a href="#main.py">main.py</a>
  &#8226;   <a href="#packaging._manylinux">packaging._manylinux</a>
  &#8226;   <a href="#packaging._tokenizer">packaging._tokenizer</a>
  &#8226;   <a href="#pystray._util">pystray._util</a>
@@ -6951,6 +7014,7 @@ imported by:
  &#8226;   <a href="#ctypes.macholib">ctypes.macholib</a>
  &#8226;   <a href="#ctypes.util">ctypes.util</a>
  &#8226;   <a href="#ctypes.wintypes">ctypes.wintypes</a>
+ &#8226;   <a href="#desktop">desktop</a>
  &#8226;   <a href="#multiprocessing.sharedctypes">multiprocessing.sharedctypes</a>
  &#8226;   <a href="#packaging._manylinux">packaging._manylinux</a>
  &#8226;   <a href="#platform">platform</a>
@@ -7165,7 +7229,9 @@ imported by:
   <a target="code" href="///C:/Users/johnp/PycharmProjects/Stormwatch/dashboard_views.py" type="text/plain"><tt>dashboard_views</tt></a>
 <span class="moduletype">SourceModule</span>  <div class="import">
 imports:
-    <a href="#TkFlow._layout">TkFlow._layout</a>
+    <a href="#PIL">PIL</a>
+ &#8226;   <a href="#PIL.ImageTk">PIL.ImageTk</a>
+ &#8226;   <a href="#TkFlow._layout">TkFlow._layout</a>
  &#8226;   <a href="#TkFlow.widget">TkFlow.widget</a>
  &#8226;   <a href="#alert_history">alert_history</a>
  &#8226;   <a href="#datetime">datetime</a>
@@ -7173,6 +7239,7 @@ imports:
  &#8226;   <a href="#locations">locations</a>
  &#8226;   <a href="#math">math</a>
  &#8226;   <a href="#pathlib">pathlib</a>
+ &#8226;   <a href="#radar">radar</a>
  &#8226;   <a href="#tkinter">tkinter</a>
  &#8226;   <a href="#tkinter.font">tkinter.font</a>
  &#8226;   <a href="#tkinter.ttk">tkinter.ttk</a>
@@ -7214,6 +7281,7 @@ imported by:
  &#8226;   <a href="#_pyrepl.reader">_pyrepl.reader</a>
  &#8226;   <a href="#_pyrepl.readline">_pyrepl.readline</a>
  &#8226;   <a href="#demo">demo</a>
+ &#8226;   <a href="#historical_alerts">historical_alerts</a>
  &#8226;   <a href="#history_store">history_store</a>
  &#8226;   <a href="#location_wizard">location_wizard</a>
  &#8226;   <a href="#locations">locations</a>
@@ -7221,9 +7289,11 @@ imported by:
  &#8226;   <a href="#packaging._tokenizer">packaging._tokenizer</a>
  &#8226;   <a href="#place_search">place_search</a>
  &#8226;   <a href="#pprint">pprint</a>
+ &#8226;   <a href="#radar">radar</a>
  &#8226;   <a href="#setuptools._distutils._dataclass">setuptools._distutils._dataclass</a>
  &#8226;   <a href="#setuptools._distutils.extension">setuptools._distutils.extension</a>
  &#8226;   <a href="#setuptools._vendor.packaging._tokenizer">setuptools._vendor.packaging._tokenizer</a>
+ &#8226;   <a href="#sound_preferences">sound_preferences</a>
  &#8226;   <a href="#urllib3.contrib.emscripten.request">urllib3.contrib.emscripten.request</a>
  &#8226;   <a href="#urllib3.contrib.emscripten.response">urllib3.contrib.emscripten.response</a>
 
@@ -7246,20 +7316,28 @@ imported by:
     <a href="#PIL._imagingcms">PIL._imagingcms</a>
  &#8226;   <a href="#WeatherService">WeatherService</a>
  &#8226;   <a href="#_strptime">_strptime</a>
+ &#8226;   <a href="#alert_changes">alert_changes</a>
  &#8226;   <a href="#alert_history">alert_history</a>
  &#8226;   <a href="#calendar">calendar</a>
  &#8226;   <a href="#dashboard_views">dashboard_views</a>
  &#8226;   <a href="#delivery_panel">delivery_panel</a>
  &#8226;   <a href="#demo">demo</a>
  &#8226;   <a href="#email.utils">email.utils</a>
+ &#8226;   <a href="#historical_alerts">historical_alerts</a>
+ &#8226;   <a href="#history_download">history_download</a>
  &#8226;   <a href="#history_store">history_store</a>
  &#8226;   <a href="#http.cookiejar">http.cookiejar</a>
  &#8226;   <a href="#http.server">http.server</a>
  &#8226;   <a href="#main.py">main.py</a>
+ &#8226;   <a href="#metrics">metrics</a>
+ &#8226;   <a href="#notification_explanations">notification_explanations</a>
+ &#8226;   <a href="#radar">radar</a>
+ &#8226;   <a href="#radar_panel">radar_panel</a>
  &#8226;   <a href="#requests.models">requests.models</a>
  &#8226;   <a href="#requests.sessions">requests.sessions</a>
  &#8226;   <a href="#setuptools._vendor.tomli._re">setuptools._vendor.tomli._re</a>
  &#8226;   <a href="#setuptools.warnings">setuptools.warnings</a>
+ &#8226;   <a href="#speech">speech</a>
  &#8226;   <a href="#sqlite3.dbapi2">sqlite3.dbapi2</a>
  &#8226;   <a href="#tomllib._re">tomllib._re</a>
  &#8226;   <a href="#urllib3.connection">urllib3.connection</a>
@@ -7356,12 +7434,14 @@ imported by:
 imports:
     <a href="#PIL">PIL</a>
  &#8226;   <a href="#PIL.Image">PIL.Image</a>
- &#8226;   <a href="#PIL.ImageDraw">PIL.ImageDraw</a>
+ &#8226;   <a href="#PIL.ImageTk">PIL.ImageTk</a>
+ &#8226;   <a href="#ctypes">ctypes</a>
  &#8226;   <a href="#pathlib">pathlib</a>
  &#8226;   <a href="#pystray">pystray</a>
  &#8226;   <a href="#subprocess">subprocess</a>
  &#8226;   <a href="#sys">sys</a>
  &#8226;   <a href="#threading">threading</a>
+ &#8226;   <a href="#tkinter">tkinter</a>
  &#8226;   <a href="#winreg">winreg</a>
 
   </div>
@@ -10979,6 +11059,49 @@ imported by:
 </div>
 
 <div class="node">
+  <a name="historical_alerts"></a>
+  <a target="code" href="///C:/Users/johnp/PycharmProjects/Stormwatch/historical_alerts.py" type="text/plain"><tt>historical_alerts</tt></a>
+<span class="moduletype">SourceModule</span>  <div class="import">
+imports:
+    <a href="#dataclasses">dataclasses</a>
+ &#8226;   <a href="#datetime">datetime</a>
+ &#8226;   <a href="#locations">locations</a>
+ &#8226;   <a href="#requests">requests</a>
+ &#8226;   <a href="#threading">threading</a>
+ &#8226;   <a href="#time">time</a>
+ &#8226;   <a href="#urllib.parse">urllib.parse</a>
+
+  </div>
+  <div class="import">
+imported by:
+    <a href="#history_download">history_download</a>
+ &#8226;   <a href="#history_store">history_store</a>
+
+  </div>
+
+</div>
+
+<div class="node">
+  <a name="history_download"></a>
+  <a target="code" href="///C:/Users/johnp/PycharmProjects/Stormwatch/history_download.py" type="text/plain"><tt>history_download</tt></a>
+<span class="moduletype">SourceModule</span>  <div class="import">
+imports:
+    <a href="#TkFlow">TkFlow</a>
+ &#8226;   <a href="#datetime">datetime</a>
+ &#8226;   <a href="#historical_alerts">historical_alerts</a>
+ &#8226;   <a href="#locations">locations</a>
+ &#8226;   <a href="#threading">threading</a>
+
+  </div>
+  <div class="import">
+imported by:
+    <a href="#history_panel">history_panel</a>
+
+  </div>
+
+</div>
+
+<div class="node">
   <a name="history_panel"></a>
   <a target="code" href="///C:/Users/johnp/PycharmProjects/Stormwatch/history_panel.py" type="text/plain"><tt>history_panel</tt></a>
 <span class="moduletype">SourceModule</span>  <div class="import">
@@ -10986,6 +11109,7 @@ imports:
     <a href="#TkFlow">TkFlow</a>
  &#8226;   <a href="#TkFlow.widget">TkFlow.widget</a>
  &#8226;   <a href="#delivery_panel">delivery_panel</a>
+ &#8226;   <a href="#history_download">history_download</a>
  &#8226;   <a href="#history_store">history_store</a>
  &#8226;   <a href="#tkinter">tkinter</a>
  &#8226;   <a href="#tkinter.filedialog">tkinter.filedialog</a>
@@ -11005,9 +11129,11 @@ imported by:
   <a target="code" href="///C:/Users/johnp/PycharmProjects/Stormwatch/history_store.py" type="text/plain"><tt>history_store</tt></a>
 <span class="moduletype">SourceModule</span>  <div class="import">
 imports:
-    <a href="#csv">csv</a>
+    <a href="#alert_history">alert_history</a>
+ &#8226;   <a href="#csv">csv</a>
  &#8226;   <a href="#dataclasses">dataclasses</a>
  &#8226;   <a href="#datetime">datetime</a>
+ &#8226;   <a href="#historical_alerts">historical_alerts</a>
  &#8226;   <a href="#json">json</a>
  &#8226;   <a href="#os">os</a>
  &#8226;   <a href="#pathlib">pathlib</a>
@@ -12037,6 +12163,7 @@ imported by:
  &#8226;   <a href="#pydoc">pydoc</a>
  &#8226;   <a href="#pystray._darwin">pystray._darwin</a>
  &#8226;   <a href="#quopri">quopri</a>
+ &#8226;   <a href="#radar">radar</a>
  &#8226;   <a href="#requests.compat">requests.compat</a>
  &#8226;   <a href="#requests.models">requests.models</a>
  &#8226;   <a href="#requests.utils">requests.utils</a>
@@ -12231,6 +12358,7 @@ imported by:
  &#8226;   <a href="#json.scanner">json.scanner</a>
  &#8226;   <a href="#locations">locations</a>
  &#8226;   <a href="#multiprocessing.resource_tracker">multiprocessing.resource_tracker</a>
+ &#8226;   <a href="#radar">radar</a>
  &#8226;   <a href="#requests.compat">requests.compat</a>
  &#8226;   <a href="#setuptools.config._validate_pyproject.error_reporting">setuptools.config._validate_pyproject.error_reporting</a>
  &#8226;   <a href="#setuptools.msvc">setuptools.msvc</a>
@@ -12413,6 +12541,8 @@ imported by:
  &#8226;   <a href="#dashboard_views">dashboard_views</a>
  &#8226;   <a href="#delivery_panel">delivery_panel</a>
  &#8226;   <a href="#demo">demo</a>
+ &#8226;   <a href="#historical_alerts">historical_alerts</a>
+ &#8226;   <a href="#history_download">history_download</a>
  &#8226;   <a href="#main.py">main.py</a>
  &#8226;   <a href="#place_search">place_search</a>
 
@@ -12543,6 +12673,7 @@ imported by:
  &#8226;   <a href="#dashboard_views">dashboard_views</a>
  &#8226;   <a href="#fractions">fractions</a>
  &#8226;   <a href="#locations">locations</a>
+ &#8226;   <a href="#radar">radar</a>
  &#8226;   <a href="#random">random</a>
  &#8226;   <a href="#reprlib">reprlib</a>
  &#8226;   <a href="#selectors">selectors</a>
@@ -12550,6 +12681,28 @@ imported by:
  &#8226;   <a href="#setuptools._vendor.more_itertools.recipes">setuptools._vendor.more_itertools.recipes</a>
  &#8226;   <a href="#statistics">statistics</a>
  &#8226;   <a href="#urllib.parse">urllib.parse</a>
+
+  </div>
+
+</div>
+
+<div class="node">
+  <a name="metrics"></a>
+  <a target="code" href="///C:/Users/johnp/PycharmProjects/Stormwatch/metrics.py" type="text/plain"><tt>metrics</tt></a>
+<span class="moduletype">SourceModule</span>  <div class="import">
+imports:
+    <a href="#TkFlow">TkFlow</a>
+ &#8226;   <a href="#TkFlow.widget">TkFlow.widget</a>
+ &#8226;   <a href="#alert_history">alert_history</a>
+ &#8226;   <a href="#collections">collections</a>
+ &#8226;   <a href="#datetime">datetime</a>
+ &#8226;   <a href="#tkinter">tkinter</a>
+ &#8226;   <a href="#tkinter.ttk">tkinter.ttk</a>
+
+  </div>
+  <div class="import">
+imported by:
+    <a href="#main.py">main.py</a>
 
   </div>
 
@@ -13450,6 +13603,23 @@ imports:
 imported by:
     <a href="#ftplib">ftplib</a>
  &#8226;   <a href="#requests.utils">requests.utils</a>
+
+  </div>
+
+</div>
+
+<div class="node">
+  <a name="notification_explanations"></a>
+  <a target="code" href="///C:/Users/johnp/PycharmProjects/Stormwatch/notification_explanations.py" type="text/plain"><tt>notification_explanations</tt></a>
+<span class="moduletype">SourceModule</span>  <div class="import">
+imports:
+    <a href="#alert_history">alert_history</a>
+ &#8226;   <a href="#datetime">datetime</a>
+
+  </div>
+  <div class="import">
+imported by:
+    <a href="#main.py">main.py</a>
 
   </div>
 
@@ -14563,6 +14733,7 @@ imported by:
  &#8226;   <a href="#setuptools.monkey">setuptools.monkey</a>
  &#8226;   <a href="#setuptools.msvc">setuptools.msvc</a>
  &#8226;   <a href="#setuptools.windows_support">setuptools.windows_support</a>
+ &#8226;   <a href="#speech">speech</a>
  &#8226;   <a href="#uuid">uuid</a>
 
   </div>
@@ -16754,6 +16925,54 @@ imported by:
 </div>
 
 <div class="node">
+  <a name="radar"></a>
+  <a target="code" href="///C:/Users/johnp/PycharmProjects/Stormwatch/radar.py" type="text/plain"><tt>radar</tt></a>
+<span class="moduletype">SourceModule</span>  <div class="import">
+imports:
+    <a href="#PIL">PIL</a>
+ &#8226;   <a href="#PIL.Image">PIL.Image</a>
+ &#8226;   <a href="#PIL.ImageDraw">PIL.ImageDraw</a>
+ &#8226;   <a href="#collections">collections</a>
+ &#8226;   <a href="#concurrent.futures">concurrent.futures</a>
+ &#8226;   <a href="#dataclasses">dataclasses</a>
+ &#8226;   <a href="#datetime">datetime</a>
+ &#8226;   <a href="#io">io</a>
+ &#8226;   <a href="#json">json</a>
+ &#8226;   <a href="#math">math</a>
+ &#8226;   <a href="#re">re</a>
+ &#8226;   <a href="#requests">requests</a>
+ &#8226;   <a href="#threading">threading</a>
+ &#8226;   <a href="#urllib.parse">urllib.parse</a>
+
+  </div>
+  <div class="import">
+imported by:
+    <a href="#dashboard_views">dashboard_views</a>
+ &#8226;   <a href="#radar_panel">radar_panel</a>
+
+  </div>
+
+</div>
+
+<div class="node">
+  <a name="radar_panel"></a>
+  <a target="code" href="///C:/Users/johnp/PycharmProjects/Stormwatch/radar_panel.py" type="text/plain"><tt>radar_panel</tt></a>
+<span class="moduletype">SourceModule</span>  <div class="import">
+imports:
+    <a href="#TkFlow">TkFlow</a>
+ &#8226;   <a href="#datetime">datetime</a>
+ &#8226;   <a href="#radar">radar</a>
+
+  </div>
+  <div class="import">
+imported by:
+    <a href="#main.py">main.py</a>
+
+  </div>
+
+</div>
+
+<div class="node">
   <a name="random"></a>
   <a target="code" href="///C:/Program%20Files/Python313/Lib/random.py" type="text/plain"><tt>random</tt></a>
 <span class="moduletype">SourceModule</span>  <div class="import">
@@ -16888,6 +17107,7 @@ imported by:
  &#8226;   <a href="#posixpath">posixpath</a>
  &#8226;   <a href="#pprint">pprint</a>
  &#8226;   <a href="#pydoc">pydoc</a>
+ &#8226;   <a href="#radar">radar</a>
  &#8226;   <a href="#re">re</a>
  &#8226;   <a href="#re._casefix">re._casefix</a>
  &#8226;   <a href="#re._compiler">re._compiler</a>
@@ -17113,6 +17333,8 @@ imports:
   <div class="import">
 imported by:
     <a href="#WeatherService">WeatherService</a>
+ &#8226;   <a href="#historical_alerts">historical_alerts</a>
+ &#8226;   <a href="#radar">radar</a>
  &#8226;   <a href="#requests">requests</a>
  &#8226;   <a href="#requests.__version__">requests.__version__</a>
  &#8226;   <a href="#requests._internal_utils">requests._internal_utils</a>
@@ -21360,6 +21582,7 @@ imported by:
  &#8226;   <a href="#setuptools.archive_util">setuptools.archive_util</a>
  &#8226;   <a href="#setuptools.command.bdist_wheel">setuptools.command.bdist_wheel</a>
  &#8226;   <a href="#setuptools.compat.py311">setuptools.compat.py311</a>
+ &#8226;   <a href="#speech">speech</a>
  &#8226;   <a href="#tarfile">tarfile</a>
  &#8226;   <a href="#tempfile">tempfile</a>
  &#8226;   <a href="#uuid">uuid</a>
@@ -21604,6 +21827,45 @@ imported by:
 </div>
 
 <div class="node">
+  <a name="sound_preferences"></a>
+  <a target="code" href="///C:/Users/johnp/PycharmProjects/Stormwatch/sound_preferences.py" type="text/plain"><tt>sound_preferences</tt></a>
+<span class="moduletype">SourceModule</span>  <div class="import">
+imports:
+    <a href="#TkFlow">TkFlow</a>
+ &#8226;   <a href="#dataclasses">dataclasses</a>
+ &#8226;   <a href="#sqlite3">sqlite3</a>
+
+  </div>
+  <div class="import">
+imported by:
+    <a href="#main.py">main.py</a>
+
+  </div>
+
+</div>
+
+<div class="node">
+  <a name="speech"></a>
+  <a target="code" href="///C:/Users/johnp/PycharmProjects/Stormwatch/speech.py" type="text/plain"><tt>speech</tt></a>
+<span class="moduletype">SourceModule</span>  <div class="import">
+imports:
+    <a href="#alert_history">alert_history</a>
+ &#8226;   <a href="#datetime">datetime</a>
+ &#8226;   <a href="#platform">platform</a>
+ &#8226;   <a href="#shutil">shutil</a>
+ &#8226;   <a href="#subprocess">subprocess</a>
+ &#8226;   <a href="#threading">threading</a>
+
+  </div>
+  <div class="import">
+imported by:
+    <a href="#main.py">main.py</a>
+
+  </div>
+
+</div>
+
+<div class="node">
   <a name="sqlite3"></a>
   <a target="code" href="///C:/Program%20Files/Python313/Lib/sqlite3/__init__.py" type="text/plain"><tt>sqlite3</tt></a>
 <span class="moduletype">Package</span>  <div class="import">
@@ -21620,6 +21882,7 @@ imported by:
     <a href="#alert_history">alert_history</a>
  &#8226;   <a href="#history_store">history_store</a>
  &#8226;   <a href="#main.py">main.py</a>
+ &#8226;   <a href="#sound_preferences">sound_preferences</a>
  &#8226;   <a href="#sqlite3">sqlite3</a>
  &#8226;   <a href="#sqlite3.__main__">sqlite3.__main__</a>
  &#8226;   <a href="#sqlite3.dbapi2">sqlite3.dbapi2</a>
@@ -22000,6 +22263,7 @@ imported by:
  &#8226;   <a href="#setuptools._vendor.packaging._musllinux">setuptools._vendor.packaging._musllinux</a>
  &#8226;   <a href="#setuptools._vendor.packaging.tags">setuptools._vendor.packaging.tags</a>
  &#8226;   <a href="#setuptools.installer">setuptools.installer</a>
+ &#8226;   <a href="#speech">speech</a>
  &#8226;   <a href="#uuid">uuid</a>
  &#8226;   <a href="#webbrowser">webbrowser</a>
 
@@ -22025,6 +22289,7 @@ imported by:
  &#8226;   <a href="#PIL._imagingcms">PIL._imagingcms</a>
  &#8226;   <a href="#PIL._typing">PIL._typing</a>
  &#8226;   <a href="#PIL.features">PIL.features</a>
+ &#8226;   <a href="#TkFlow._tk_lifetime">TkFlow._tk_lifetime</a>
  &#8226;   <a href="#_aix_support">_aix_support</a>
  &#8226;   <a href="#_collections_abc">_collections_abc</a>
  &#8226;   <a href="#_colorize">_colorize</a>
@@ -22426,7 +22691,8 @@ imports:
   </div>
   <div class="import">
 imported by:
-    <a href="#TkFlow._workers">TkFlow._workers</a>
+    <a href="#TkFlow._tk_lifetime">TkFlow._tk_lifetime</a>
+ &#8226;   <a href="#TkFlow._workers">TkFlow._workers</a>
  &#8226;   <a href="#TkFlow.app">TkFlow.app</a>
  &#8226;   <a href="#TkFlow.log_view">TkFlow.log_view</a>
  &#8226;   <a href="#_pyrepl._threading_handler">_pyrepl._threading_handler</a>
@@ -22437,6 +22703,8 @@ imported by:
  &#8226;   <a href="#concurrent.futures.process">concurrent.futures.process</a>
  &#8226;   <a href="#concurrent.futures.thread">concurrent.futures.thread</a>
  &#8226;   <a href="#desktop">desktop</a>
+ &#8226;   <a href="#historical_alerts">historical_alerts</a>
+ &#8226;   <a href="#history_download">history_download</a>
  &#8226;   <a href="#http.cookiejar">http.cookiejar</a>
  &#8226;   <a href="#importlib.util">importlib.util</a>
  &#8226;   <a href="#logging">logging</a>
@@ -22459,9 +22727,11 @@ imported by:
  &#8226;   <a href="#pystray._win32">pystray._win32</a>
  &#8226;   <a href="#pystray._xorg">pystray._xorg</a>
  &#8226;   <a href="#queue">queue</a>
+ &#8226;   <a href="#radar">radar</a>
  &#8226;   <a href="#requests.auth">requests.auth</a>
  &#8226;   <a href="#requests.cookies">requests.cookies</a>
  &#8226;   <a href="#socketserver">socketserver</a>
+ &#8226;   <a href="#speech">speech</a>
  &#8226;   <a href="#subprocess">subprocess</a>
  &#8226;   <a href="#sysconfig">sysconfig</a>
  &#8226;   <a href="#urllib3._collections">urllib3._collections</a>
@@ -22500,6 +22770,7 @@ imported by:
  &#8226;   <a href="#email.utils">email.utils</a>
  &#8226;   <a href="#gc">gc</a>
  &#8226;   <a href="#gzip">gzip</a>
+ &#8226;   <a href="#historical_alerts">historical_alerts</a>
  &#8226;   <a href="#http.cookiejar">http.cookiejar</a>
  &#8226;   <a href="#http.cookies">http.cookies</a>
  &#8226;   <a href="#http.server">http.server</a>
@@ -22576,9 +22847,11 @@ imported by:
  &#8226;   <a href="#TkFlow.window">TkFlow.window</a>
  &#8226;   <a href="#dashboard_views">dashboard_views</a>
  &#8226;   <a href="#delivery_panel">delivery_panel</a>
+ &#8226;   <a href="#desktop">desktop</a>
  &#8226;   <a href="#history_panel">history_panel</a>
  &#8226;   <a href="#location_wizard">location_wizard</a>
  &#8226;   <a href="#main.py">main.py</a>
+ &#8226;   <a href="#metrics">metrics</a>
  &#8226;   <a href="#tkinter.commondialog">tkinter.commondialog</a>
  &#8226;   <a href="#tkinter.constants">tkinter.constants</a>
  &#8226;   <a href="#tkinter.dialog">tkinter.dialog</a>
@@ -22742,6 +23015,7 @@ imported by:
  &#8226;   <a href="#delivery_panel">delivery_panel</a>
  &#8226;   <a href="#history_panel">history_panel</a>
  &#8226;   <a href="#location_wizard">location_wizard</a>
+ &#8226;   <a href="#metrics">metrics</a>
  &#8226;   <a href="#tkinter">tkinter</a>
 
   </div>
@@ -23444,6 +23718,7 @@ imports:
 imported by:
     <a href="#WeatherService">WeatherService</a>
  &#8226;   <a href="#email.utils">email.utils</a>
+ &#8226;   <a href="#historical_alerts">historical_alerts</a>
  &#8226;   <a href="#http.client">http.client</a>
  &#8226;   <a href="#http.cookiejar">http.cookiejar</a>
  &#8226;   <a href="#http.cookies">http.cookies</a>
@@ -23452,6 +23727,7 @@ imported by:
  &#8226;   <a href="#mimetypes">mimetypes</a>
  &#8226;   <a href="#nturl2path">nturl2path</a>
  &#8226;   <a href="#pathlib._local">pathlib._local</a>
+ &#8226;   <a href="#radar">radar</a>
  &#8226;   <a href="#requests.compat">requests.compat</a>
  &#8226;   <a href="#setuptools.config._validate_pyproject.formats">setuptools.config._validate_pyproject.formats</a>
  &#8226;   <a href="#urllib.request">urllib.request</a>
