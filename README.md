@@ -365,6 +365,27 @@ backup; copy the database and any remaining `-wal`/`-shm` companion files togeth
 as one set. Do not discard those companions. The feed
 is a current-session view; the **History** tab retains previous alert changes.
 
+## Data menu and metrics
+
+**Data → metrics** opens a summary of every saved historical event type and the
+types in the current monitored alert snapshot. The table shows distinct
+historical NWS alert IDs, recorded changes, downloaded changes, and active alerts
+for each type. Updates and lifecycle changes can produce several records for
+one alert ID; these are not counts of storms. Downloaded changes are a subset
+of the historical changes.
+
+Historical totals include the complete saved archive, including optional NWS
+downloads, independently of History search filters or pagination. Active counts
+match enabled locations and selected event types, exclude elapsed expirations,
+and count each alert once across overlapping profiles. They use the last known
+monitored snapshot rather than nationwide totals. The summary displays connection
+health so cached data is recognizable when paused, offline, or not yet refreshed.
+
+Use **Refresh**, or reopen the window, to update the snapshot. This reads local
+data without making NWS requests or sending notifications. Archive aggregation
+runs in the background using a consistent SQLite read snapshot, allowing live
+monitoring to keep writing. No saved history is changed.
+
 ## Searchable history and CSV export
 
 **History** provides a paginated archive of alert versions and lifecycle changes.

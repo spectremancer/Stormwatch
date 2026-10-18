@@ -190,6 +190,25 @@ class HistoryArchive:
             return ([r[0] for r in self.connection.execute('SELECT DISTINCT name FROM history_locations ORDER BY name')],
                     [r[0] for r in self.connection.execute('SELECT DISTINCT event FROM history_events ORDER BY event')])
 
+    def history_metrics(self):
+        """Aggregate all saved history without loading alert JSON or GUI pages."""
+        # An independent WAL read snapshot keeps lengthy archive aggregation
+        # from holding the live monitor's connection lock or blocking writes.
+        reader = sqlite3.connect(self.path)
+        reader.row_factory = sqlite3.Row
+        try:
+            reader.execute('BEGIN')
+            rows = reader.execute('''SELECT event,COUNT(DISTINCT id) AS alert_ids,
+                COUNT(*) AS changes,SUM(source='NWS API archive') AS downloaded
+                FROM history_events GROUP BY event ORDER BY event''').fetchall()
+            totals = reader.execute('''SELECT COUNT(DISTINCT id) AS alert_ids,
+                COUNT(*) AS changes,SUM(source='NWS API archive') AS downloaded
+                FROM history_events''').fetchone()
+            return dict(types=[dict(row) for row in rows],alert_ids=totals['alert_ids'],
+                        changes=totals['changes'],downloaded=totals['downloaded'] or 0)
+        finally:
+            reader.close()
+
     def export_history(self, path, filters=HistoryFilter()):
         sql, values = self._history_sql(filters)
         target = Path(path).resolve()

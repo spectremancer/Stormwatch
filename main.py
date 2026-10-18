@@ -13,7 +13,7 @@ from tkinter import font as tkfont
 
 import pygame
 
-from TkFlow import App, Button, Checkbox, Dropdown, Form, Label, TextArea, Window
+from TkFlow import App, Button, Checkbox, Dropdown, Form, Label, Menu, TextArea, Window
 from WeatherService import WeatherService
 from alert_history import AlertHistory, instant, reference_ids
 from dashboard_views import AlertMap, Cards, Tabs, LocationOverview, threat_priority
@@ -28,6 +28,7 @@ from radar_panel import RadarPanel
 from sound_preferences import SoundPreferences
 from notification_explanations import decisions, explanation_text
 from speech import SpeechService, SpeechCancelled, announcement
+from metrics import Metrics
 
 EVENT_FAMILIES = (
     "Tornado", "Severe Thunderstorm", "Hurricane", "Tropical Storm",
@@ -78,6 +79,10 @@ class StormwatchApp:
         self.hidden = False
         self.font_family = tkfont.nametofont("TkDefaultFont").actual("family")
         self._style()
+        self.metrics = None
+        self.menu = Menu(self.app)
+        self.data_menu = self.menu.dropdown('Data')
+        self.data_menu.add_command('metrics',self.open_metrics)
         header = self.app.row(padding=0)
         brand = header.column(padding=0, expand=True)
         Label(brand, "STORMWATCH", style="Brand.TLabel")
@@ -813,6 +818,11 @@ class StormwatchApp:
         if urlparse(alert["url"]).scheme == "https":
             Button(window, "Open official alert", lambda: webbrowser.open(alert["url"]))
 
+    def open_metrics(self):
+        if self.metrics is None:
+            self.metrics = Metrics(self)
+        self.metrics.show()
+
     def show_notification_explanation(self, alert):
         window = Window(self.app,'Notification explanations',width=780,height=620)
         Label(window,'Why did I get this? / Why was it silent?',style='Heading.TLabel')
@@ -916,6 +926,8 @@ class StormwatchApp:
                 pass
         self.demo.close()
         self.history_panel.close()
+        if self.metrics is not None:
+            self.metrics.wait()
         with self.sound_lock:
             self.service.session.close()
             pygame.mixer.quit()
