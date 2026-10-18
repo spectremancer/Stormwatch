@@ -7,6 +7,7 @@ from TkFlow.widget import Widget
 from dashboard_views import AlertMap
 from place_search import nearby_places, search_places
 from notification_rules import add_rule_fields, rule_values
+from event_catalog import WEATHER_EVENTS, DEFAULT_EVENTS
 
 
 class Results(Widget):
@@ -65,8 +66,12 @@ class LocationWizard:
         self.form.add_checkbox('desktop', 'Desktop', True, text='Send desktop notifications')
         add_rule_fields(self.form, owner.profile)
         self.form.add_label('Select the events you want to follow:', style='Heading.TLabel')
-        self.events = {event: Checkbox(self.form.body, event, value=True)
-                       for event in owner.profile.events or ['Tornado Warning', 'Tornado Watch', 'Hurricane Warning', 'Hurricane Watch']}
+        tools = self.form.body.row(padding=0)
+        Button(tools,'Select all',lambda:self.select_events(True))
+        Button(tools,'Clear',lambda:self.select_events(False))
+        selected = set(owner.profile.events or DEFAULT_EVENTS)
+        self.events = {event: Checkbox(self.form.body,event,value=event in selected)
+                       for event in sorted(set(WEATHER_EVENTS) | set(owner.choices) | selected)}
         self.summary = self.form.add_label('', wraplength=680, style='Muted.TLabel')
         self.message = Label(self.window, 'Enter a city and state, or a ZIP code.', style='Muted.TLabel', wraplength=740)
         actions = self.window.row(padding=0)
@@ -87,6 +92,10 @@ class LocationWizard:
             self.forward.disable()
         else:
             self.forward.enable()
+
+    def select_events(self, enabled):
+        for control in self.events.values():
+            control.set(enabled)
 
     def search(self):
         if self.busy:

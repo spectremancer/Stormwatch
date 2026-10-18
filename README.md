@@ -1,7 +1,7 @@
 # Stormwatch
 
 A TkFlow desktop weather dashboard for saved locations, live National Weather
-Service watches and warnings, and independent sound, desktop, and optional spoken notifications.
+Service weather and environmental alerts, and independent sound, desktop, and optional spoken notifications.
 
 ## Install and run
 
@@ -87,16 +87,51 @@ matching enabled locations. Location receipts remain separate for troubleshootin
 Adding another overlapping location later does not replay a channel already
 submitted for that version. A new meaningful alert version can notify again.
 
-## Watch / warning notification rules
+## Supported weather events and notification categories
 
-The location wizard and **Edit** include **Watch / warning rules**. For example,
-leave the sound/desktop master switches enabled, check sound for warnings, uncheck
-sound for watches, and keep desktop notifications checked for both. Each location
-has its own four rules: warning sound, warning desktop, watch sound, and watch
-desktop. The sidebar summarizes the selected location's effective rules.
+The sidebar, location wizard, sound/speech selectors, History event filter, and
+history-download selector share a catalog of **97 NWS weather/environmental
+types**, checked against the [NWS event catalog](https://api.weather.gov/alerts/types)
+on October 18, 2026. Types are
+available before an active alert of that type is encountered. Coverage includes
+all 38 previously excluded weather-related advisories, statements, outlooks,
+forecasts, Air Quality Alert, and Extreme Fire Danger. It also includes previously
+unlisted marine, storm-surge, lake-effect snow, ashfall, avalanche, typhoon, fire,
+and related natural-hazard warnings and watches.
 
-These categories use the NWS event's Watch/Warning designation, not the separate
-NWS severity field. Event-type selections still determine what is monitored;
+Examples include Winter Weather Advisory, Heat Advisory, Cold Weather Advisory,
+Flood Advisory, Dense Fog Advisory, Small Craft Advisory, Special Weather
+Statement, Rip Current Statement, Hazardous Weather Outlook, Hydrologic Outlook,
+Short Term Forecast, and Air Quality Alert. New entries are available for selection
+but are **not automatically enabled**. Existing profiles keep their selections;
+new profiles still start with the six tornado, hurricane, and severe-thunderstorm
+watch/warning types. The Tornado + hurricane preset remains exactly four types.
+
+The weather catalog excludes civil, administrative, telephone-outage, abduction,
+and test messages. Previously supported saved Watch/Warning names, including
+legacy NWS names, remain compatible. Newly encountered supported weather names
+appear unchecked. Availability of a catalog entry does not guarantee that NWS
+currently has a message of that type in the selected area or download period.
+
+The location wizard and **Edit** include **Event-category rules**, with separate
+sound and desktop switches for six categories:
+
+- Warnings.
+- Watches.
+- Advisories.
+- Statements.
+- Outlooks / forecasts.
+- Other weather alerts (Air Quality Alert and Extreme Fire Danger).
+
+Each category's rules inherit the location's master switches unless overridden.
+For example, enable desktop notifications for advisories while silencing their
+sound, without changing warning or watch behavior. The sidebar summarizes the
+selected categories. Speech retains its own master switch, per-event selection,
+and monitoring-session issue-time cutoff, independently of sound/desktop rules.
+Older profiles acquire the new category settings without losing existing rules.
+
+Categories use the NWS event name, not the separate NWS severity field. Event-type
+selections still determine what is monitored;
 turning off notification channels does not hide matching cards or history.
 Sound/desktop master switches override the category rules. Existing profiles
 retain their previous behavior until edited. Rules apply on the next refresh;
@@ -114,7 +149,7 @@ without Tornado Watch. **No event sounds** silences automatic sounds for that
 location. **All event types** follows all monitored types, including future
 selections.
 
-The location's Sound switch and watch/warning sound rules must also allow an
+The location's Sound switch and event-category sound rules must also allow an
 event. The event must match an enabled location and be selected for monitoring.
 Sound filtering does not remove alerts from the feed, cards, history, or desktop
 notifications. With overlapping locations, an event may still play once if any
@@ -240,8 +275,10 @@ API key. Its geographic context works offline. Dataset attribution is in
 The **Locations** tab shows all saved locations, with 20 cards per page. Each
 card shows its geographic filter, selected alert count, monitoring status, and
 highest-priority matching alert with an expiration countdown and details button.
-Warnings rank before watches, then by official severity; tornado/hurricane events
-and earlier expirations break ties. Disabled locations are clearly labeled.
+Warnings rank first, followed by official severity; tornado/hurricane events,
+event category, and earlier expirations break ties. Each category has a distinct
+feed/card/map color; advisories and statements are not labeled as watches.
+Disabled locations are clearly labeled.
 **NO LIVE DATA** and **STALE** remain visible until monitoring has a recent
 successful refresh. “No selected active alerts” applies only to the location's
 selected event types and does not establish an all-clear for other hazards.
@@ -415,11 +452,17 @@ The editable event-type filter accepts case-insensitive partial names: typing
 choose a full event name from the dropdown. Search and CSV export use the same
 filters. History searches alerts recorded locally, including optional NWS downloads.
 
-Use **Download recent alerts** in History to fetch past NWS watches and warnings.
+Use **Download recent alerts** in History to fetch past NWS weather events.
 Choose inclusive local dates, **All US** or one state/territory, and event types (including
 tornado watches and warnings together). Downloads are opt-in and run separately
 from live monitoring. **Cancel download** stops after the current request; closing
 the dialog or quitting also requests cancellation.
+Choose **All weather events**, a category such as **Advisories** or **Statements**,
+or any individual catalog event. All weather events filters out civil and
+administrative messages; previously saved explicit Watch/Warning selections stay
+usable. The same parser and event categories are used for live and downloaded
+weather records. Imported advisories, statements, forecasts, and alerts appear
+in History, CSV export, and metrics with their original NWS event names.
 
 The official NWS API provides a **rolling archive of roughly seven days**, not a
 multi-year historical database. Older and future dates are rejected; the oldest
@@ -597,5 +640,6 @@ without blocking window closure on network requests. Windows Run-entry and
 notification submission paths are mocked on Linux; actual Windows tray/toast
 behavior still needs verification on Windows.
 
-Forecasts, severity-specific rules, and individual-event desktop
-notification rule editors are not part of this release.
+A separate current-conditions/forecast panel, severity-specific rules, and
+individual-event desktop notification rule editors are not part of this release.
+NWS Short Term Forecast alert products are supported when supplied by the alerts API.

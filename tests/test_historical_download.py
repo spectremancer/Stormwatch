@@ -174,7 +174,7 @@ class ArchiveTests(unittest.TestCase):
         self.assertEqual(self.store.history_count(),0)
 
     def test_test_messages_and_unsupported_events_are_skipped_and_update_kind_is_honest(self):
-        self.session.get.return_value = response(dict(features=[feature(status='Test'),feature(event='Special Weather Statement'),
+        self.session.get.return_value = response(dict(features=[feature(status='Test'),feature(event='Administrative Message'),
             feature('update',messageType='Update'),feature('cancel',messageType='Cancel')]))
         result = self.download()
         self.assertEqual(result['skipped'],2)

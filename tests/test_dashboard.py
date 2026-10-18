@@ -131,11 +131,11 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(len(self.ui.snapshot), 1)
 
     def test_checkbox_visibility_and_scroll(self):
-        box = self.ui.choices["Tornado Warning"].widget
+        box = next(iter(self.ui.choices.values())).widget
         self.assertEqual(self.ui.app.root.winfo_containing(box.winfo_rootx()+8, box.winfo_rooty()+8), box)
         self.ui.filters.canvas.yview_moveto(1)
         self.ui.app.root.update()
-        last = self.ui.choices["Tsunami Watch"].widget
+        last = list(self.ui.choices.values())[-1].widget
         self.assertEqual(self.ui.app.root.winfo_containing(last.winfo_rootx()+8, last.winfo_rooty()+8), last)
 
     def test_background_poll_and_sound_test(self):

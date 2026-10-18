@@ -9,19 +9,13 @@ from pathlib import Path
 
 import requests
 from plyer import notification
+from event_catalog import WEATHER_EVENTS, is_supported_event
 
 
 class WeatherService:
     API_URL = "https://api.weather.gov/alerts/active"
 
-    WATCHED_EVENTS = {
-        "Tornado Warning",
-        "Tornado Watch",
-        "Severe Thunderstorm Warning",
-        "Severe Thunderstorm Watch",
-        "Hurricane Warning",
-        "Hurricane Watch",
-    }
+    WATCHED_EVENTS = set(WEATHER_EVENTS)
 
     def __init__(self, interval=60):
         self.interval = interval
@@ -163,7 +157,7 @@ class WeatherService:
 
         alert_id = props.get("id") or feature.get("id") or ""
 
-        if not alert_id or not event.endswith((" Watch", " Warning")):
+        if not alert_id or not is_supported_event(event):
             return None
 
         return {
@@ -324,10 +318,10 @@ class WeatherService:
         )
 
     def select_alert_types(self):
-        """Monitor every NWS alert whose event is a Watch or Warning."""
+        """Monitor supported NWS weather alerts and environmental hazards."""
 
         print("\\n=== US Storm Monitor Setup ===")
-        print("Monitoring all NWS Watch and Warning events.")
+        print("Monitoring NWS warnings, watches, advisories, statements, outlooks and weather alerts.")
         print("Tornado and hurricane watches/warnings use alert.mp3.\\n")
 
     def play_tornado_alert(self):
@@ -355,7 +349,7 @@ class WeatherService:
         self.logger.info("WeatherService started.")
         self.logger.info("Polling every %d seconds.", self.interval)
         self.logger.info(
-            "Monitoring all NWS Watch and Warning events."
+            "Monitoring supported NWS weather and environmental events."
         )
 
         first_check = True

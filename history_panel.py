@@ -6,6 +6,7 @@ from TkFlow.widget import Widget
 from delivery_panel import local_time
 from history_store import HistoryFilter
 from history_download import HistoryDownload
+from event_catalog import WEATHER_EVENTS
 
 
 class HistoryTable(Widget):
@@ -110,7 +111,7 @@ class HistoryPanel:
         selected_id = old['sequence'] if old else None
         locations, events = self.store.history_options()
         for control, values in ((self.location, ['All locations'] + sorted(set(locations) | {p.name for p in self.owner.profiles})),
-                                (self.event, ['All event types'] + events)):
+                                (self.event, ['All event types'] + sorted(set(events) | set(WEATHER_EVENTS)))):
             control.values = tuple(values)
             control.configure(values=values)
         total = self.store.history_count(self.filters)

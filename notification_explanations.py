@@ -28,7 +28,7 @@ def decisions(profile, alert, kind='New', quiet=False, legacy=False, now=None, s
             elif channel in ('sound','speech') and getattr(profile,channel+'_events') is not None and alert['event'] not in getattr(profile,channel+'_events'):
                 reason = base+f'This event is excluded by the {channel} event filter.'
             elif not profile.allows(alert,channel):
-                reason = base+f'The watch/warning {channel} rule is off.'
+                reason = base+f'The event-category {channel} rule is off.'
             elif channel == 'speech' and speech_baseline:
                 reason = base+'Speech only covers alerts issued after this monitoring session started. Existing alerts or alerts without a valid issue time stay silent.'
             # A supplied baseline flag enables the session-time speech policy;

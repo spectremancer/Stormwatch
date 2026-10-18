@@ -5,13 +5,16 @@ import threading
 from TkFlow import Button, Dropdown, Label, TextInput, Window
 from historical_alerts import ArchiveQuery, DownloadCancelled, download_recent
 from locations import STATE_CODES
+from event_catalog import WEATHER_EVENTS, CATEGORY_LABELS, event_category
 
 
 EVENTS = {
-    'All watches and warnings':'',
+    'All weather events':'',
     'Tornado watches and warnings':'Tornado Warning,Tornado Watch',
     'Hurricane watches and warnings':'Hurricane Warning,Hurricane Watch',
 }
+EVENTS.update({label:','.join(event for event in WEATHER_EVENTS if event_category(event)==kind)
+               for kind,label in CATEGORY_LABELS.items()})
 
 
 class HistoryDownload:
@@ -39,7 +42,7 @@ class HistoryDownload:
         states = self.owner.profile.states
         self.state = Dropdown(area,['Choose state','All US']+sorted(STATE_CODES),
                               value=states[0] if states else 'Choose state',width=14)
-        options = list(EVENTS) + sorted(set(self.owner.profile.events))
+        options = list(EVENTS) + sorted(set(WEATHER_EVENTS) | set(self.owner.profile.events))
         self.event = Dropdown(self.window,options,value='Tornado watches and warnings')
         self.message = Label(self.window,'Choose dates, coverage and event types, then download.',
                              style='Muted.TLabel',wraplength=550)

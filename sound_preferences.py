@@ -3,6 +3,7 @@ from dataclasses import replace
 import sqlite3
 
 from TkFlow import Button, Checkbox, Form, Label, Window
+from event_catalog import WEATHER_EVENTS, CRITICAL_EVENTS
 
 
 class SoundPreferences:
@@ -16,7 +17,7 @@ class SoundPreferences:
         Label(self.window,'Speech covers only alerts issued after monitoring starts, using your computer’s local voice.\n'
               'Existing alerts stay silent. Speech is independent of alert.mp3 and desktop settings.' if self.speaking else
               'Choose which monitored events can play sound. Event monitoring and desktop notifications\n'
-              'keep their own settings. The location Sound switch and watch/warning rules must also allow playback.',
+              'keep their own settings. The location Sound switch and event-category rules must also allow playback.',
               style='Muted.TLabel',wraplength=600)
         if self.speaking:
             self.enabled = Checkbox(self.window,'Read alerts aloud for this location (off by default)',value=self.profile.speech)
@@ -29,8 +30,8 @@ class SoundPreferences:
         Button(tools,'No spoken events' if self.speaking else 'No event sounds',self.none)
         self.form = Form(self.window,'Specific event types',expand=True,fill='both')
         self.form.canvas.configure(background='#0b1424')
-        events = sorted(set(owner.choices) | set(self.profile.events) | set(selection or []),
-                        key=lambda event:(not event.startswith(('Tornado ','Hurricane ')),event))
+        events = sorted(set(WEATHER_EVENTS) | set(owner.choices) | set(self.profile.events) | set(selection or []),
+                        key=lambda event:(event not in CRITICAL_EVENTS,event))
         self.choices = {event:Checkbox(self.form.body,event,value=selection is None or event in selection,
                        command=lambda _:self.update()) for event in events}
         self.note = Label(self.window,'',style='Muted.TLabel',wraplength=600)
@@ -60,7 +61,7 @@ class SoundPreferences:
     def critical_only(self):
         self.follow.set(False)
         for event,choice in self.choices.items():
-            choice.set(event.startswith(('Tornado ','Hurricane ')))
+            choice.set(event in CRITICAL_EVENTS)
         self.update()
 
     def all_events(self):

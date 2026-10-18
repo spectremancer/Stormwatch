@@ -4,6 +4,7 @@ import json
 import math
 import re
 import uuid
+from event_catalog import CATEGORY_LABELS, DEFAULT_EVENTS, event_category, is_supported_event
 
 STATE_CODES = set("AL AK AZ AR CA CO CT DE DC FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY AS GU MP PR VI".split())
 
@@ -45,9 +46,7 @@ class LocationProfile:
     latitude: float | None = None
     longitude: float | None = None
     zones: list = field(default_factory=list)
-    events: list = field(default_factory=lambda: [
-        "Tornado Warning", "Tornado Watch", "Hurricane Warning", "Hurricane Watch",
-        "Severe Thunderstorm Warning", "Severe Thunderstorm Watch"])
+    events: list = field(default_factory=lambda: list(DEFAULT_EVENTS))
     enabled: bool = True
     sound: bool = True
     desktop: bool = True
@@ -55,6 +54,14 @@ class LocationProfile:
     warning_desktop: bool | None = None
     watch_sound: bool | None = None
     watch_desktop: bool | None = None
+    advisory_sound: bool | None = None
+    advisory_desktop: bool | None = None
+    statement_sound: bool | None = None
+    statement_desktop: bool | None = None
+    outlook_sound: bool | None = None
+    outlook_desktop: bool | None = None
+    other_sound: bool | None = None
+    other_desktop: bool | None = None
     # None follows all monitored events; [] silences automatic event sounds.
     sound_events: list[str] | None = None
     speech: bool = False
@@ -76,25 +83,24 @@ class LocationProfile:
         if self.latitude is not None and (not math.isfinite(self.latitude) or not math.isfinite(self.longitude) or
                                           not -90 <= self.latitude <= 90 or not -180 <= self.longitude <= 180):
             raise ValueError("Latitude must be -90…90 and longitude -180…180.")
-        for kind in ("warning", "watch"):
+        for kind in CATEGORY_LABELS:
             for channel in ("sound", "desktop"):
                 value = getattr(self, f"{kind}_{channel}")
                 if value is not None and not isinstance(value, bool):
-                    raise ValueError("Watch and warning notification rules must be on or off.")
+                    raise ValueError("Event-category notification rules must be on or off.")
         if not isinstance(self.speech,bool):
             raise ValueError('Read alerts aloud must be on or off.')
         for channel in ('sound','speech'):
             events = getattr(self,channel+'_events')
             if events is not None:
-                if not isinstance(events,list) or any(not isinstance(event,str) or
-                        not event.endswith((' Warning',' Watch')) for event in events):
-                    raise ValueError(f'{channel.title()} events must be a list of watch/warning event names.')
+                if not isinstance(events,list) or any(not is_supported_event(event) for event in events):
+                    raise ValueError(f'{channel.title()} events must be a list of supported NWS event names.')
                 setattr(self,channel+'_events',sorted(set(events)))
         return self
 
     def allows(self, alert, channel):
         event = alert.get("event", "") if isinstance(alert, dict) else alert
-        kind = "warning" if event.endswith(" Warning") else "watch" if event.endswith(" Watch") else None
+        kind = event_category(event)
         if channel not in ("sound", "desktop", "speech") or kind is None or not getattr(self, channel):
             return False
         if channel in ('sound','speech'):
@@ -108,10 +114,13 @@ class LocationProfile:
 
     def rules_summary(self):
         result = []
-        for kind in ("Warning", "Watch"):
+        for kind,label in CATEGORY_LABELS.items():
+            events = [event for event in self.events if event_category(event)==kind]
+            if not events:
+                continue
             channels = [c.title() for c in ("sound", "desktop")
-                        if any(self.allows(event,c) for event in self.events if event.endswith(' '+kind))]
-            result.append(f"{kind}s: {' + '.join(channels) or 'Off'}")
+                        if any(self.allows(event,c) for event in events)]
+            result.append(f"{label}: {' + '.join(channels) or 'Off'}")
         if self.sound_events is not None:
             result.append(f'Sound filter: {len(self.sound_events)} event types' if self.sound_events else 'Sound filter: no events')
         if self.speech:

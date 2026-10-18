@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 import requests
 
 from locations import STATE_CODES
+from event_catalog import is_supported_event, is_weather_event
 
 
 class DownloadCancelled(Exception):
@@ -35,10 +36,10 @@ class ArchiveQuery:
         state = self.state.strip().upper()
         if state != 'US' and state not in STATE_CODES:
             raise ValueError('Choose All US or a US state/territory to download.')
-        if self.events and any(not event.endswith((' Warning',' Watch')) or
+        if self.events and any(not is_supported_event(event) or
                                not all(c.isascii() and (c.isalnum() or c == ' ') for c in event)
                                for event in self.events.split(',')):
-            raise ValueError('Choose valid NWS watch or warning names.')
+            raise ValueError('Choose valid supported NWS weather-event names.')
         start = max(datetime.combine(first,time.min).astimezone(timezone.utc),earliest)
         end = min(datetime.combine(last+timedelta(days=1),time.min).astimezone(timezone.utc),now)
         params = dict(start=start.isoformat(),end=end.isoformat(),status='actual',limit=500)
@@ -92,6 +93,9 @@ def download_recent(query, store, parse_alert, cancel=None, progress=None, sessi
                 if not isinstance(feature,dict) or not isinstance(feature.get('properties'),dict):
                     raise ValueError('Invalid NWS archive alert; no records were imported.')
                 if feature['properties'].get('status') != 'Actual':
+                    skipped += 1
+                    continue
+                if not query.events and not is_weather_event(feature['properties'].get('event')):
                     skipped += 1
                     continue
                 alert = parse_alert(feature)

@@ -29,15 +29,9 @@ from sound_preferences import SoundPreferences
 from notification_explanations import decisions, explanation_text
 from speech import SpeechService, SpeechCancelled, announcement, issued_after
 from metrics import Metrics
+from event_catalog import WEATHER_EVENTS, DEFAULT_EVENTS, CRITICAL_EVENTS, EVENT_COLORS, event_category
 
-EVENT_FAMILIES = (
-    "Tornado", "Severe Thunderstorm", "Hurricane", "Tropical Storm",
-    "Flash Flood", "Flood", "Coastal Flood", "Winter Storm", "Blizzard",
-    "Ice Storm", "Snow Squall", "High Wind", "Extreme Wind", "Dust Storm",
-    "Excessive Heat", "Extreme Heat", "Extreme Cold", "Freeze", "Hard Freeze",
-    "Wind Chill", "Red Flag", "Fire Weather", "Storm", "Gale", "Tsunami",
-)
-CRITICAL = {"Tornado Warning", "Tornado Watch", "Hurricane Warning", "Hurricane Watch"}
+CRITICAL = CRITICAL_EVENTS
 REFRESH_INTERVALS = (30,60,90,120)
 
 
@@ -109,10 +103,8 @@ class StormwatchApp:
         self.filters = Form(controls, "Event types · selected location", expand=True, fill="both", padding=8)
         self.filters.canvas.configure(background="#0b1424")
         self.choices = {}
-        for family in EVENT_FAMILIES:
-            for kind in ("Warning", "Watch"):
-                event = f"{family} {kind}"
-                self.add_event(event, event in self.profile.events)
+        for event in list(DEFAULT_EVENTS) + [event for event in WEATHER_EVENTS if event not in DEFAULT_EVENTS]:
+            self.add_event(event, event in self.profile.events)
         for event in self.profile.events:
             self.add_event(event, True)
         self.selection = Label(controls, "", style="Muted.TLabel")
@@ -152,8 +144,9 @@ class StormwatchApp:
         self.feed = TextArea(feed_page, readonly=True, max_lines=4000, expand=True, fill="both",
                              font=(self.font_family, 11), bg="#101c30", fg="#e5edf8", relief="flat",
                              padx=16, pady=12, borderwidth=0)
-        for tag, color, size in (("warning", "#ffbc87", 12), ("watch", "#85caff", 12),
-                                 ("meta", "#9aaec7", 10), ("body", "#e5edf8", 11)):
+        tags = [(kind,color,12) for kind,color in EVENT_COLORS.items()] + [
+            ('meta','#9aaec7',10),('body','#e5edf8',11)]
+        for tag,color,size in tags:
             self.feed.text.tag_configure(tag, foreground=color, font=(self.font_family, size), spacing1=5, spacing3=6)
         map_page = self.tabs.page("Alert map")
         tools = map_page.row(padding=0)
@@ -808,7 +801,7 @@ class StormwatchApp:
         def excerpt(value, limit):
             return value if len(value) <= limit else value[:limit] + "… [Full text in alert details]"
         for alert, kind, locations in messages:
-            tag = "warning" if alert["event"].endswith("Warning") else "watch"
+            tag = event_category(alert['event']) or 'other'
             summary = self.history.change_summary(alert, kind)
             segments.extend([
                 (f"{kind.upper()}  ·  {alert['event']}\n",tag),

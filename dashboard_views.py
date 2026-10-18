@@ -12,6 +12,7 @@ from TkFlow._layout import _Layout
 from alert_history import instant
 from locations import rings
 from radar import Viewport
+from event_catalog import event_category, event_color
 
 BG, PANEL, TEXT, MUTED = "#0b1424", "#142238", "#e5edf8", "#9aaec7"
 
@@ -108,7 +109,7 @@ class Cards(Widget):
                       style="Muted.TLabel", padding=20).pack(anchor="w")
         for row in rows:
             alert = row["alert"]
-            color = "#ffbc87" if alert["event"].endswith("Warning") else "#85caff"
+            color = event_color(alert['event'])
             card = tk.Frame(self.body, background=PANEL, padx=16, pady=12, highlightthickness=1,
                             highlightbackground="#243a56")
             card.pack(fill="x", pady=(0, 10))
@@ -135,11 +136,12 @@ class Cards(Widget):
 
 
 def threat_priority(alert):
-    """Warning first, then official severity; earliest end breaks ties."""
+    """Warning first, then severity; critical types, category and expiry break ties."""
     end = instant(alert.get('ends') or alert.get('expires'))
-    return (int(alert['event'].endswith(' Warning')),
+    return (int(event_category(alert['event'])=='warning'),
             {'Extreme':4,'Severe':3,'Moderate':2,'Minor':1}.get(alert.get('severity'),0),
             int(alert['event'].startswith(('Tornado','Hurricane'))),
+            {'warning':5,'watch':4,'advisory':3,'other':2,'statement':1,'outlook':0}.get(event_category(alert['event']),0),
             -end.timestamp() if end else float('-inf'))
 
 
@@ -176,7 +178,7 @@ class LocationOverview(Cards):
         for row in rows:
             profile, matches = row['profile'], row['matches']
             top = max((r['alert'] for r in matches), key=threat_priority, default=None)
-            color = '#ffbc87' if top and top['event'].endswith(' Warning') else '#85caff' if top else MUTED
+            color = event_color(top['event']) if top else MUTED
             card = tk.Frame(self.body, bg=PANEL, padx=16, pady=12, highlightthickness=1, highlightbackground='#243a56')
             card.pack(fill='x', pady=(0,10))
             for text, fg, bold in ((profile.name,TEXT,True),(profile.summary(),MUTED,False),
@@ -350,7 +352,7 @@ class AlertMap(Widget):
                     coords = [value for lon, lat, *_ in ring for value in self.project(lon, lat)]
                     if len(coords) >= 6:
                         item = c.create_polygon(coords, fill="", width=2,
-                                                outline="#ffbc87" if alert["event"].endswith("Warning") else "#85caff")
+                                                outline=event_color(alert['event']))
                         self.items[item] = alert
         labels = [self.project(p.longitude, p.latitude) for p in self.profiles if p.latitude is not None]
         for place in self.place_labels:
