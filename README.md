@@ -519,7 +519,12 @@ reuse, change summaries, removed-location updates, location threat ranking,
 radar projection, caching, playback, stale imagery, icon setup, event-specific
 sound filters, safe connection diagnostics/redirect handling, recorded notification
 explanations, speech preferences, independent voice retries, bounded queuing,
-cancellation, and slow-voice isolation. Windows Run-entry and
+cancellation, slow-voice isolation, saved refresh intervals, and background-GC
+shutdown safety. Tcl interpreters are released on the GUI thread after their
+widgets and pending jobs are gone; closed form variables are disposed before
+window destruction, and idle workers release completed jobs. This prevents
+`Tcl_AsyncDelete: async handler deleted by the wrong thread` during cleanup
+without blocking window closure on network requests. Windows Run-entry and
 notification submission paths are mocked on Linux; actual Windows tray/toast
 behavior still needs verification on Windows.
 

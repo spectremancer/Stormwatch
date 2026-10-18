@@ -1,5 +1,4 @@
 from datetime import datetime, timedelta, timezone
-import gc
 import os
 from pathlib import Path
 import sqlite3
@@ -14,7 +13,6 @@ from main import REFRESH_INTERVALS, StormwatchApp
 @unittest.skipUnless(os.environ.get('DISPLAY'),'GUI tests require DISPLAY')
 class RefreshIntervalTests(unittest.TestCase):
     def setUp(self):
-        gc.collect()  # Destroyed Tk interpreter cycles must be collected on the GUI thread.
         self.directory = tempfile.TemporaryDirectory()
         self.path = Path(self.directory.name)/'history.db'
         self.ui = StormwatchApp(Mock(interval=60),AlertHistory(self.path))
@@ -24,7 +22,6 @@ class RefreshIntervalTests(unittest.TestCase):
         self.ui.close()
         self.ui.cleanup_thread.join(timeout=5)
         self.ui = None
-        gc.collect()
         self.directory.cleanup()
 
     def test_all_choices_apply_on_start_and_schedule_correct_delay(self):
@@ -53,14 +50,12 @@ class RefreshIntervalTests(unittest.TestCase):
         self.ui.set_refresh_interval('90 seconds')
         self.ui.close();self.ui.cleanup_thread.join(timeout=5)
         self.ui = None
-        gc.collect()
         self.ui = StormwatchApp(Mock(interval=60),AlertHistory(self.path))
         self.assertEqual(self.ui.service.interval,90)
         self.assertEqual(self.ui.refresh_interval_picker.get(),'90 seconds')
         self.ui.history.save_setting('nws_refresh_interval',45)
         self.ui.close();self.ui.cleanup_thread.join(timeout=5)
         self.ui = None
-        gc.collect()
         self.ui = StormwatchApp(Mock(interval=60),AlertHistory(self.path))
         self.assertEqual(self.ui.service.interval,60)
         self.assertEqual(self.ui.refresh_interval_picker.get(),'60 seconds')

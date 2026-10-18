@@ -1,5 +1,4 @@
 import csv
-import gc
 from io import BytesIO
 import json
 import os
@@ -66,11 +65,6 @@ class ChangeSummaryTests(unittest.TestCase):
 
 
 class RadarDataTests(unittest.TestCase):
-    def setUp(self):
-        # Prior GUI tests create/destroy Tk interpreters. Collect their cycles on
-        # the main thread before the Pillow tile workers can trigger Python GC.
-        gc.collect()
-
     def metadata(self, now):
         return dict(host='https://tilecache.rainviewer.com',radar=dict(
             past=[dict(time=now-i*600,path=f'/v2/radar/frame_{i:02x}') for i in range(13)],

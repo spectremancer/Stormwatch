@@ -8,6 +8,7 @@ import threading
 import tkinter as tk
 import time
 from ._workers import WorkerPool
+from . import _tk_lifetime
 from tkinter import messagebox, ttk
 from ._layout import _Layout
 from ._helpers import Callback, _callback, _positive
@@ -105,6 +106,7 @@ class App(_Window):
         self._closed = False
         self._windows: list[Window] = []
         self.root = tk.Tk()
+        _tk_lifetime.retain(self.root.tk)
         try:
             self.style = ttk.Style(self.root)
             if theme is not None:
@@ -132,6 +134,7 @@ class App(_Window):
                 self._queue.put((command, args))
 
     def _drain(self) -> None:
+        _tk_lifetime.reap()
         # A bounded batch prevents a busy producer from starving the Tk event loop.
         deadline = time.monotonic() + 0.005
         for _ in range(100):
@@ -216,3 +219,4 @@ class App(_Window):
         self.root.destroy()
         while not self._queue.empty():
             self._queue.get_nowait()
+        _tk_lifetime.reap()

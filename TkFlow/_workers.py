@@ -30,21 +30,28 @@ class WorkerPool:
     def _work(self):
         while not self._stopping.is_set():
             try:
-                future, function, args, kwargs = self._tasks.get(timeout=0.1)
+                task = self._tasks.get(timeout=0.1)
             except queue.Empty:
                 continue
             try:
-                if self._stopping.is_set():
-                    future.cancel()
-                elif future.set_running_or_notify_cancel():
-                    try:
-                        result = function(*args, **kwargs)
-                    except BaseException as error:
-                        future.set_exception(error)
-                    else:
-                        future.set_result(result)
+                self._run_task(task)
             finally:
+                # Do not keep the last job's bound GUI owner/result alive
+                # while this worker waits for another job or shuts down.
+                del task
                 self._tasks.task_done()
+
+    def _run_task(self, task):
+        future, function, args, kwargs = task
+        if self._stopping.is_set():
+            future.cancel()
+        elif future.set_running_or_notify_cancel():
+            try:
+                result = function(*args, **kwargs)
+            except BaseException as error:
+                future.set_exception(error)
+            else:
+                future.set_result(result)
 
     def shutdown(self):
         with self._lock:

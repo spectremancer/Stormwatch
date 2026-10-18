@@ -19,7 +19,13 @@ class _ValueWidget(Widget):
         return self
 
     def _dispose(self) -> None:
+        if self._destroyed:
+            return
         if getattr(self, "_trace_id", None) is not None:
             self.variable.trace_remove("write", self._trace_id)
             self._trace_id = None
+        # Variable.__del__ calls Tcl. Dispose it while the GUI thread and
+        # interpreter are still available, not later in a worker's GC cycle.
+        self.variable.__del__()
+        self.variable._tk = None
         super()._dispose()
