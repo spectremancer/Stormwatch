@@ -11,6 +11,7 @@ import threading
 from locations import LocationProfile
 from history_store import HistoryArchive
 from alert_changes import summarize_change
+from application_paths import state_directory
 
 
 def instant(value):
@@ -43,8 +44,7 @@ def reference_ids(alert):
 class AlertHistory(HistoryArchive):
     def __init__(self, path=None):
         if path is None:
-            root = Path(os.environ.get("LOCALAPPDATA") or os.environ.get("XDG_STATE_HOME") or Path.home() / ".local" / "state")
-            path = root / "Stormwatch" / "processed-alerts.sqlite3"
+            path = state_directory() / "processed-alerts.sqlite3"
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.lock = threading.RLock()

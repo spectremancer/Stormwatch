@@ -270,7 +270,7 @@ class ArchiveTests(unittest.TestCase):
         self.assertEqual(self.store.history_count(),0)
 
 
-@unittest.skipUnless(os.environ.get('DISPLAY'),'GUI tests require DISPLAY')
+@unittest.skipUnless(os.name == 'nt' or os.environ.get('DISPLAY'),'GUI tests require a desktop display')
 class DownloadGuiTests(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()

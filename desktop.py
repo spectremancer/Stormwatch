@@ -31,10 +31,14 @@ def set_login(enabled):
         raise RuntimeError("Launch at login is currently supported on Windows only.")
     import winreg
     executable = Path(sys.executable)
-    pythonw = executable.with_name("pythonw.exe")
-    if pythonw.exists():
-        executable = pythonw
-    command = subprocess.list2cmdline([str(executable), str(Path(__file__).with_name("main.py")), "--monitor"])
+    if getattr(sys, 'frozen', False):
+        args = [str(executable), '--monitor']
+    else:
+        pythonw = executable.with_name("pythonw.exe")
+        if pythonw.exists():
+            executable = pythonw
+        args = [str(executable), str(Path(__file__).with_name("main.py")), '--monitor']
+    command = subprocess.list2cmdline(args)
     with winreg.CreateKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Run") as key:
         if enabled:
             winreg.SetValueEx(key, "Stormwatch", 0, winreg.REG_SZ, command)

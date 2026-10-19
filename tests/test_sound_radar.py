@@ -98,7 +98,7 @@ class RadarConnectionTests(unittest.TestCase):
         self.assertEqual(request.call_count,4)
 
 
-@unittest.skipUnless(os.environ.get('DISPLAY'),'GUI tests require DISPLAY')
+@unittest.skipUnless(os.name == 'nt' or os.environ.get('DISPLAY'),'GUI tests require a desktop display')
 class SoundRadarGuiTests(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()

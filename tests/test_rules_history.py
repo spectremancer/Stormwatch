@@ -176,7 +176,7 @@ class HistoryTests(unittest.TestCase):
         self.assertEqual(self.store.history_count(),1)
 
 
-@unittest.skipUnless(os.environ.get('DISPLAY'),'GUI tests require DISPLAY')
+@unittest.skipUnless(os.name == 'nt' or os.environ.get('DISPLAY'),'GUI tests require a desktop display')
 class CombinedNotificationTests(unittest.TestCase):
     def setUp(self):
         self.directory=tempfile.TemporaryDirectory()

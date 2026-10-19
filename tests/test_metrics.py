@@ -80,7 +80,7 @@ class MetricsTests(unittest.TestCase):
         self.assertEqual(self.store.history_count(),2)
 
 
-@unittest.skipUnless(os.environ.get('DISPLAY'),'GUI tests require DISPLAY')
+@unittest.skipUnless(os.name == 'nt' or os.environ.get('DISPLAY'),'GUI tests require a desktop display')
 class MetricsGuiTests(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()

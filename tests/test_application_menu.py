@@ -14,7 +14,7 @@ from main import StormwatchApp
 from WeatherService import WeatherService
 
 
-@unittest.skipUnless(os.environ.get('DISPLAY'), 'GUI tests require DISPLAY')
+@unittest.skipUnless(os.name == 'nt' or os.environ.get('DISPLAY'), 'GUI tests require a desktop display')
 class ApplicationMenuTests(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()

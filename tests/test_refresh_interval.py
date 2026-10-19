@@ -10,7 +10,7 @@ from alert_history import AlertHistory
 from main import REFRESH_INTERVALS, StormwatchApp
 
 
-@unittest.skipUnless(os.environ.get('DISPLAY'),'GUI tests require DISPLAY')
+@unittest.skipUnless(os.name == 'nt' or os.environ.get('DISPLAY'),'GUI tests require a desktop display')
 class RefreshIntervalTests(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()

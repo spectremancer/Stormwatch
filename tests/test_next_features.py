@@ -158,7 +158,7 @@ class RadarDataTests(unittest.TestCase):
             RadarService()._tile(('https://tilecache.rainviewer.com','/v2/radar/123',1,0,0))
 
 
-@unittest.skipUnless(os.environ.get('DISPLAY'),'GUI tests require DISPLAY')
+@unittest.skipUnless(os.name == 'nt' or os.environ.get('DISPLAY'),'GUI tests require a desktop display')
 class NextFeatureGuiTests(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()

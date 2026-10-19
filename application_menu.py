@@ -10,6 +10,7 @@ import webbrowser
 from tkinter import filedialog
 
 from TkFlow import Button, Checkbox, Label, Menu, TextArea, Window
+from application_paths import state_directory
 
 
 class ApplicationMenu:
@@ -352,7 +353,7 @@ class ApplicationMenu:
         # Use the actual logger destination when available, including packaged builds.
         handlers = logging.getLogger('WeatherService').handlers
         path = next((Path(h.baseFilename).parent for h in handlers if isinstance(h, logging.FileHandler)),
-                    Path(__file__).resolve().parent)
+                    state_directory())
         try:
             if sys.platform == 'win32':
                 os.startfile(str(path))

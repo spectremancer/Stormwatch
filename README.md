@@ -5,7 +5,7 @@ Service weather and environmental alerts, and independent sound, desktop, and op
 
 ## Install and run
 
-Use Python 3.12+ with Tk support:
+Use Python 3.12 or 3.13 with Tk support:
 
 ```sh
 python -m pip install -r requirements.txt
@@ -25,8 +25,33 @@ Radar retains its separate five-minute refresh schedule.
 
 `--test-tornado` and `--test-hurricane` play `alert.mp3` without opening the GUI.
 The interface needs a desktop display; audible alerts need an audio device.
-Linux may require `python3-tk` and desktop notification tools such as
-`libnotify-bin`/`python3-dbus`. The system tray uses pystray and Pillow.
+On Debian/Ubuntu Linux, install the desktop dependencies first:
+
+```sh
+sudo apt-get install python3-tk python3-venv libnotify-bin espeak-ng python3-gi gir1.2-ayatanaappindicator3-0.1
+python3 -m venv --system-site-packages .venv
+. .venv/bin/activate
+python -m pip install -r requirements.txt
+python main.py
+```
+
+Use the distribution's Python (3.12/3.13) with `--system-site-packages` so the
+optional tray backend can import the system PyGObject (`gi`) bindings. A virtual
+environment using a different Python minor version may not be able to load those
+bindings. Core monitoring, maps, history, and MP3 playback do not require GTK.
+Linux needs a graphical desktop; a Wayland session also needs XWayland for Tk.
+Desktop notifications require `notify-send` and a working session D-Bus
+notification service. A failed submission is recorded as failed for retry.
+Speech requires `espeak-ng` or `espeak`. Tray menus require GTK/AppIndicator and a
+tray host; GNOME may require the AppIndicator extension. The basic Xorg pystray
+backend lacks menus, so Stormwatch keeps its window open instead of hiding it
+when that unsupported backend is selected. Linux launch-at-login is not provided;
+the Windows-specific control remains disabled on Linux.
+
+Windows uses Tk/Pillow icons, native notifications via plyer, and Windows
+PowerShell/.NET System.Speech for optional voice announcements. MP3 playback uses
+pygame on both platforms. Both need a working default audio output for audible
+alerts; successful software submission does not prove you heard the alert.
 
 The project-root `icon.ico` supplies the title-bar, Windows taskbar, child-window,
 and tray icons. Windows uses a Stormwatch-specific taskbar application identity.
@@ -42,6 +67,36 @@ The spec embeds `icon.ico` and bundles the icon, sound, and data directory. The
 checked-in `dist/main.exe` is an older build; source changes require rebuilding
 it with the command above. This release's Windows executable was not built on
 the Linux development machine.
+
+## Cross-platform verification
+
+`.github/workflows/desktop-compatibility.yml` runs the GUI/application tests on
+Windows and Linux with Python 3.12 and 3.13. Linux uses Xvfb; Windows GUI tests run
+natively without requiring the Linux `DISPLAY` variable. Each job also runs
+`scripts/desktop_smoke.py` against the real application with isolated temporary
+state and dummy audio. The Windows 3.13 job builds an EXE and uploads it as an
+artifact; this does not replace the checked-in executable automatically.
+
+To repeat the native smoke test locally:
+
+```sh
+python -B scripts/desktop_smoke.py
+```
+
+On headless Linux, use `xvfb-run -a python -B scripts/desktop_smoke.py`. This checks
+startup, assets, map/settings rendering, writable storage, real MP3 decoding, and
+clean shutdown. It does not make weather requests or send real notifications.
+Physical sound, actual notification display, and tray-host integration still
+require an interactive desktop check. Linux cloud validation cannot establish
+native Windows behavior; inspect the Windows CI results and test your packaged
+build on its target Windows desktop before distributing it.
+
+Logs and legacy service state now live beside the database in the writable
+per-user state directory, rather than beside installed assets. Windows uses
+`%LOCALAPPDATA%/Stormwatch`; Linux uses `$XDG_STATE_HOME/Stormwatch` or
+`~/.local/state/Stormwatch`. Existing project-root service state is read as a
+migration fallback; future writes use the user directory. **Tools → Open Log
+Folder** opens the actual logger destination.
 
 ## Saved locations
 
@@ -644,8 +699,10 @@ window open with an explanatory message. Tray mode targets Windows and
 menu-capable Linux backends; macOS background tray integration is not included.
 
 **Launch at login (Windows)** explicitly adds/removes a per-user Windows Run
-entry that invokes this checkout with `--monitor`; it does not request admin
-rights. Keep the checkout and Python installation at the same paths. This
+entry with `--monitor`; it does not request admin rights. Source installs use
+Python/pythonw plus `main.py`; packaged installs invoke the installed EXE directly,
+without referencing temporary extracted files. Keep the installation at the same
+path. This
 setting takes effect only when you choose it in the interface.
 
 The health banner shows the last successful refresh, the next refresh countdown,

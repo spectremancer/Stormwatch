@@ -60,7 +60,7 @@ class StorePerformanceTests(unittest.TestCase):
         self.assertEqual(self.store.reconcile(),[])
 
 
-@unittest.skipUnless(os.environ.get('DISPLAY'),'GUI tests require DISPLAY')
+@unittest.skipUnless(os.name == 'nt' or os.environ.get('DISPLAY'),'GUI tests require a desktop display')
 class GuiPerformanceTests(unittest.TestCase):
     def setUp(self):
         self.directory=tempfile.TemporaryDirectory()

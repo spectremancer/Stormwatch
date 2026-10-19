@@ -31,7 +31,7 @@ class WorkerLifetimeTests(unittest.TestCase):
                 thread.join(timeout=5)
 
 
-@unittest.skipUnless(os.environ.get('DISPLAY'), 'GUI tests require DISPLAY')
+@unittest.skipUnless(os.name == 'nt' or os.environ.get('DISPLAY'), 'GUI tests require a desktop display')
 class GuiLifetimeTests(unittest.TestCase):
     def test_closed_gui_collected_by_worker_and_interpreters_reclaimed_on_main(self):
         script = textwrap.dedent('''

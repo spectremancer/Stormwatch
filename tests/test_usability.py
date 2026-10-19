@@ -55,7 +55,7 @@ class DeliveryMigrationTests(unittest.TestCase):
                 store.close()
 
 
-@unittest.skipUnless(os.environ.get('DISPLAY'), 'GUI tests require DISPLAY')
+@unittest.skipUnless(os.name == 'nt' or os.environ.get('DISPLAY'), 'GUI tests require a desktop display')
 class UsabilityTests(unittest.TestCase):
     def setUp(self):
         self.service = Mock(interval=60, base_dir=Path(__file__).resolve().parents[1])

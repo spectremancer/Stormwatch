@@ -3,6 +3,7 @@ import json
 import logging
 import platform
 import subprocess
+import shutil
 import time
 import pygame
 from pathlib import Path
@@ -10,6 +11,7 @@ from pathlib import Path
 import requests
 from plyer import notification
 from event_catalog import WEATHER_EVENTS, is_supported_event
+from application_paths import state_directory
 
 
 class WeatherService:
@@ -20,7 +22,9 @@ class WeatherService:
     def __init__(self, interval=60):
         self.interval = interval
         self.base_dir = Path(__file__).resolve().parent
-        self.state_file = self.base_dir / "storm_alert_state.json"
+        self.state_dir = state_directory()
+        self.state_dir.mkdir(parents=True, exist_ok=True)
+        self.state_file = self.state_dir / "storm_alert_state.json"
 
         self.session = requests.Session()
         self.session.headers.update({
@@ -42,7 +46,7 @@ class WeatherService:
             )
 
             file_handler = logging.FileHandler(
-                self.base_dir / "storm_monitor.log",
+                self.state_dir / "storm_monitor.log",
                 encoding="utf-8",
             )
             file_handler.setFormatter(formatter)
@@ -57,9 +61,10 @@ class WeatherService:
 
     def _load_state(self):
         try:
-            data = json.loads(
-                self.state_file.read_text(encoding="utf-8")
-            )
+            path = self.state_file
+            if not path.exists():
+                path = self.base_dir / "storm_alert_state.json"  # Read legacy state without writing into the install folder.
+            data = json.loads(path.read_text(encoding="utf-8"))
             return data if isinstance(data, dict) else {}
         except (OSError, ValueError):
             return {}
@@ -260,9 +265,19 @@ class WeatherService:
 
     def deliver_desktop(self, alert, kind="New", location=""):
         """Raise synchronous submission failures so the delivery ledger can retry."""
-        notification.notify(title=f"{kind.upper()}: {alert['event']}"[:63],
-                            message=f"{location + ': ' if location else ''}{alert['area']}"[:255],
-                            app_name="Stormwatch", timeout=10)
+        title = f"{kind.upper()}: {alert['event']}"[:63]
+        message = f"{location + ': ' if location else ''}{alert['area']}"[:255]
+        if platform.system() == 'Linux':
+            executable = shutil.which('notify-send')
+            if executable is None:
+                raise RuntimeError('Linux desktop notifications require notify-send (install libnotify-bin) and a desktop notification service.')
+            try:
+                subprocess.run([executable, '--app-name=Stormwatch', '--expire-time=10000', '--', title, message],
+                               check=True, capture_output=True, timeout=10)
+            except (OSError, subprocess.SubprocessError):
+                raise RuntimeError('Linux notification submission failed. Check the desktop notification service and session D-Bus connection.') from None
+        else:
+            notification.notify(title=title, message=message, app_name="Stormwatch", timeout=10)
 
     def deliver_sound(self):
         """Successful mixer submission is recorded separately from desktop delivery."""
