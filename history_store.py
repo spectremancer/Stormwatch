@@ -102,10 +102,11 @@ class HistoryArchive:
             self.connection.execute('INSERT OR IGNORE INTO history_locations VALUES (?,?,?)', (sequence,profile_id,name))
         return sequence
 
-    def import_archive(self, alerts, state, cancel):
+    def import_archive(self, alerts, state, cancel, *, source='NWS API archive'):
         from alert_history import instant, version_of
         from historical_alerts import DownloadCancelled
         imported = 0
+        local_file = source != 'NWS API archive'
         with self.transaction():
             # The history browser orders by insertion sequence. Import oldest
             # first so the most recently issued downloaded alerts appear first.
@@ -122,9 +123,11 @@ class HistoryArchive:
                     continue
                 kind = {'Update':'Updated','Cancel':'Cancelled'}.get(alert.get('message_type'),'New')
                 self._archive_event(alert,version,kind,
-                    [dict(id='nws-archive:'+state,name='NWS archive · '+state)],
-                    sent.isoformat(),'Issued (NWS archive)',
-                    'Downloaded from the NWS archive; not a live monitoring observation.',source='NWS API archive')
+                    [dict(id=('file-import:' if local_file else 'nws-archive:')+state,
+                          name=('Imported · ' if local_file else 'NWS archive · ')+state)],
+                    sent.isoformat(),'Issued (imported file)' if local_file else 'Issued (NWS archive)',
+                    ('Imported from a local file; not a live monitoring observation.' if local_file else
+                     'Downloaded from the NWS archive; not a live monitoring observation.'),source=source)
                 imported += 1
             if cancel.is_set():
                 raise DownloadCancelled('Download cancelled. No archive records were imported.')

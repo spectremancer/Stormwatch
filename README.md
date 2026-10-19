@@ -445,9 +445,47 @@ backup; copy the database and any remaining `-wal`/`-shm` companion files togeth
 as one set. Do not discard those companions. The feed
 is a current-session view; the **History** tab retains previous alert changes.
 
+## Application menus
+
+The menu bar groups commands under **File, Monitoring, Locations, Alerts, View,
+Data, Tools, Settings, and Help**. Existing sidebar controls remain available.
+
+- **File** exports the applied History filters to CSV or captures the visible
+  map as PNG, minimizes to the tray, and exits. Keep the map visible and
+  unobstructed during image export; this is a screen capture, including radar
+  when enabled, rather than a GIS data export.
+- **Monitoring** starts/pauses monitoring and refreshes immediately. Refresh Now
+  requires monitoring and waits until any current request finishes. Interval
+  choices share the sidebar setting and can be changed only while paused.
+- **Locations** opens the overview, adds/edits/removes locations, and provides a
+  checked list for selecting the location whose preferences are being edited.
+- **Alerts** opens notification rules for the selected location, sound/speech
+  preferences, manual notification tests, and the event selector. Clear Alert
+  Feed clears only the session feed, not saved history.
+- **View** navigates the main tabs, shows connection status, restores the default
+  window/tab/map extent, and provides map zoom, fit, and radar controls.
+- **Data** opens Metrics, recent NWS history downloads, CSV export, local NWS
+  GeoJSON import, source information, and a read-only storage/retention summary.
+  Imports accept NWS FeatureCollections up to 10 MiB and 5,000 features, retain
+  supported weather alerts, deduplicate versions, and run atomically in a worker.
+  Imported records are labeled **Local NWS GeoJSON** and never enter live views
+  or trigger notifications. Invalid issue times abort the entire import.
+- **Tools** opens simulations, delivery results, diagnostics, and the log folder.
+- **Settings** shares tray/login settings with the sidebar and offers saved
+  control text sizes of 10, 12, or 14 points. Dedicated card/map styles retain
+  their sizes. Time & Units explains existing local-time, UTC-radar, and
+  original NWS-unit behavior; it does not change official alert wording.
+- **Help** provides a getting-started guide, NWS safety information, shortcuts,
+  the GitHub issue page, and application/source credits.
+
+Shortcuts: **F5** refreshes NWS data while monitoring, **Ctrl+F** focuses history
+search, **Ctrl+E** exports matching history, **F1** opens Getting Started, and
+**Ctrl+Q** exits. **Alt+F4** uses the configured close-to-tray behavior. Opening
+menus or informational dialogs does not start monitoring or connect radar.
+
 ## Data menu and metrics
 
-**Data → metrics** opens a summary of every saved historical event type and the
+**Data → Metrics** opens a summary of every saved historical event type and the
 types in the current monitored alert snapshot. The table shows distinct
 historical NWS alert IDs, recorded changes, downloaded changes, and active alerts
 for each type. Updates and lifecycle changes can produce several records for

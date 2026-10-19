@@ -29,6 +29,7 @@ from sound_preferences import SoundPreferences
 from notification_explanations import decisions, explanation_text
 from speech import SpeechService, SpeechCancelled, announcement, batch_announcement, issued_after
 from metrics import Metrics
+from application_menu import ApplicationMenu
 from event_catalog import WEATHER_EVENTS, DEFAULT_EVENTS, CRITICAL_EVENTS, EVENT_COLORS, event_category
 
 CRITICAL = CRITICAL_EVENTS
@@ -77,8 +78,6 @@ class StormwatchApp:
         self._style()
         self.metrics = None
         self.menu = Menu(self.app)
-        self.data_menu = self.menu.dropdown('Data')
-        self.data_menu.add_command('metrics',self.open_metrics)
         header = self.app.row(padding=0)
         brand = header.column(padding=0, expand=True)
         Label(brand, "STORMWATCH", style="Brand.TLabel")
@@ -171,6 +170,10 @@ class StormwatchApp:
         self.status = Label(self.app, "Ready • Choose locations and start monitoring.", style="Muted.TLabel", wraplength=1180)
         self.tray = Tray(self.app, self.show_window, self.close, self.on_tray_ready, self.tray_failed)
         self.app.root.protocol("WM_DELETE_WINDOW", self.window_closed)
+        self.commands = ApplicationMenu(self)
+        text_size = self.history.setting('control_text_size', 10)
+        if type(text_size) is int and text_size in (10, 12, 14) and text_size != 10:
+            self.commands.set_text_size(text_size)
         self.render_active()
         self.tick()
     def _style(self):
@@ -1005,6 +1008,7 @@ class StormwatchApp:
         self.speech_pending.clear()
         self.speaker.stop()
         self.radar.close()
+        self.commands.close()
         self.history_panel.cancel_download()
         self.app.root._stormwatch_icons.clear()
         self.app.close()
@@ -1024,6 +1028,7 @@ class StormwatchApp:
                 pass
         self.demo.close()
         self.history_panel.close()
+        self.commands.wait()
         if self.metrics is not None:
             self.metrics.wait()
         with self.sound_lock:

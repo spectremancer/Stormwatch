@@ -101,8 +101,8 @@ class MetricsGuiTests(unittest.TestCase):
         self.assertTrue(condition())
 
     def test_menu_opens_reusable_metrics_and_manual_refresh_includes_new_history(self):
-        self.assertEqual(self.ui.menu.widget.entrycget(0,'label'),'Data')
-        self.assertEqual(self.ui.data_menu.widget.entrycget(0,'label'),'metrics')
+        self.assertIn('Data', [self.ui.menu.widget.entrycget(i,'label') for i in range(self.ui.menu.widget.index('end')+1)])
+        self.assertEqual(self.ui.data_menu.widget.entrycget(0,'label'),'Metrics')
         self.ui.history.observe(alert())
         self.ui.render_active()
         self.ui.history_panel.text.set('Flood')
