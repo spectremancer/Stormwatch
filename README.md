@@ -520,11 +520,14 @@ The editable event-type filter accepts case-insensitive partial names: typing
 choose a full event name from the dropdown. Search and CSV export use the same
 filters. History searches alerts recorded locally, including optional NWS downloads.
 
-Use **Download recent alerts** in History to fetch past NWS weather events.
-Choose inclusive local dates, **All US** or one state/territory, and event types (including
-tornado watches and warnings together). Downloads are opt-in and run separately
-from live monitoring. **Cancel download** stops after the current request; closing
-the dialog or quitting also requests cancellation.
+Use **Download Latest 7 Days** in History or Data to fetch the most recent
+seven days with one click. Dates are calculated at download time; no date entry
+is required. **Download Options…** in History (or **Data → History Download
+Options…**) selects **All US** or one state/territory and event types. These
+choices are remembered. Defaults use the selected profile's first state, or All
+US if it has none, and all weather events. Downloads are opt-in and run separately
+from live monitoring. **Cancel download** stops after the current request;
+closing the dialog or quitting also requests cancellation.
 Choose **All weather events**, a category such as **Advisories** or **Statements**,
 or any individual catalog event. All weather events filters out civil and
 administrative messages; previously saved explicit Watch/Warning selections stay
@@ -533,22 +536,28 @@ weather records. Imported advisories, statements, forecasts, and alerts appear
 in History, CSV export, and metrics with their original NWS event names.
 
 The official NWS API provides a **rolling archive of roughly seven days**, not a
-multi-year historical database. Older and future dates are rejected; the oldest
-available calendar day can be partial. No matches means NWS returned none for
-that query, not proof no event occurred. Multi-year searches require another
-archive source, which this version does not provide.
+multi-year historical database. The automatic batch covers the preceding 168
+hours, ending when the download begins. Archive availability at the oldest edge
+may be incomplete. No matches means NWS returned none for that query, not proof
+no event occurred. Multi-year searches require another archive source.
 
-All pages must succeed before a single atomic import. Downloads are limited to
-5,000 messages and two minutes between requests; narrow the dates/event type if
-that limit is reached. Failed or cancelled downloads keep no partial import.
-Existing alert versions are skipped. Imported rows show **NWS API archive**, use
-NWS issue time, and carry a **NWS archive · STATE** location label distinct from
-saved monitoring profiles (**NWS archive · US** for nationwide downloads).
-All US requests omit the NWS area filter; the same pagination, 5,000-message,
-time, and cancellation limits apply. Narrow dates or event types if a nationwide
-query exceeds the limit. Search filters reset after import so new records are
-visible. Their NWS message types identify new, updated, or cancelled messages;
-extensions and missing intermediate versions are not inferred.
+The worker queues seven adjacent 24-hour requests, follows each request's NWS
+pagination (500 records per page), and combines their results. A window reaching
+5,000 messages or ten pages with more pages pending is split into smaller time
+windows and requeued; busy days do not impose a 5,000-record ceiling on the week.
+Versions returned at multiple window boundaries are deduplicated. The batch
+allows up to 15 minutes, 1,000 requests, and 100,000 unique versions; windows
+cannot be split below one minute. Exceeding a safety budget reports a failure
+rather than silently accepting an incomplete import.
+
+All queued windows and pages must succeed before one atomic import. Failed or
+cancelled downloads keep no partial history. Existing alert versions are skipped.
+Imported rows show **NWS API archive**, use NWS issue time, and carry a
+**NWS archive · STATE** location label distinct from saved monitoring profiles
+(**NWS archive · US** for nationwide downloads). All US requests omit the NWS
+area filter. Search filters reset after import so new records are visible. NWS
+message types identify new, updated, or cancelled messages; extensions and
+missing intermediate versions are not inferred.
 
 Downloads populate History only. They never modify active cards, processed IDs,
 live notification decisions or delivery receipts, and never trigger sound,

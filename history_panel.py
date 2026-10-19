@@ -50,7 +50,8 @@ class HistoryPanel:
         self.downloader = None
         heading = parent.row(padding=0)
         Label(heading, 'Alert history', style='Heading.TLabel',expand=True)
-        self.download_button = Button(heading, 'Download recent alerts', self.open_download)
+        self.download_button = Button(heading, 'Download Latest 7 Days', self.download_latest)
+        Button(heading, 'Download Options…', self.open_download)
         search = parent.row(padding=0)
         self.text = TextInput(search, expand=True)
         self.text.bind('<Return>', lambda _: self.apply())
@@ -178,6 +179,11 @@ class HistoryPanel:
         self.exporting = False
         self.export_button.enable()
         self.message.set(f'CSV export failed: {error}')
+
+    def download_latest(self):
+        self.open_download()
+        if self.downloader is not None and not self.downloader.window._closed:
+            self.downloader.start_download()
 
     def open_download(self):
         if self.downloader is not None and self.downloader.busy and self.downloader.window._closed:

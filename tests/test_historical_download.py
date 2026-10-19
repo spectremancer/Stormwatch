@@ -89,6 +89,79 @@ class ArchiveTests(unittest.TestCase):
         self.assertEqual(self.store.history_count(),2)
         self.assertEqual(self.store.search_history()[0]['source'],'NWS API archive')
 
+    def test_automatic_week_queues_seven_adjacent_days_and_imports_over_5000(self):
+        base = self.now - timedelta(days=7)
+        def get(url, **kwargs):
+            params = kwargs['params']
+            if params is None:
+                day = int(url.rsplit('=',1)[1])
+                offset = 400
+            else:
+                day = (datetime.fromisoformat(params['start'])-base).days
+                offset = 0
+            payload = dict(features=[feature(f'day-{day}-{i}',sent=(base+timedelta(days=day,hours=1)).isoformat())
+                                     for i in range(offset,offset+400)])
+            if offset == 0:
+                payload['pagination'] = dict(next=f'https://api.weather.gov/alerts?cursor={day}')
+            return response(payload)
+        self.session.get.side_effect = get
+        query = ArchiveQuery.latest('US')
+        result = download_recent(query,self.store,parse,session=self.session,now=self.now)
+        self.assertEqual(result['imported'],5600)
+        self.assertEqual(result['received'],5600)
+        self.assertEqual(self.store.history_count(),5600)
+        self.assertEqual(self.session.get.call_count,14)
+        ranges = [(datetime.fromisoformat(call.kwargs['params']['start']),
+                   datetime.fromisoformat(call.kwargs['params']['end'])) for call in self.session.get.call_args_list if call.kwargs['params'] is not None]
+        self.assertEqual(ranges[0][0],base)
+        self.assertEqual(ranges[-1][1],self.now)
+        self.assertTrue(all(end-start == timedelta(days=1) for start,end in ranges))
+        self.assertTrue(all(ranges[i][1] == ranges[i+1][0] for i in range(6)))
+        self.assertEqual(self.store.rows(active_only=True),[])
+
+    def test_busy_day_subdivides_then_paginates_without_losing_other_days(self):
+        base = self.now-timedelta(days=7)
+        overflowing = [feature(f'overflow-{i}',sent=base.isoformat()) for i in range(5000)]
+        seen = []
+        next_url = 'https://api.weather.gov/alerts?cursor=half-page'
+        def get(url, **kwargs):
+            params = kwargs['params']
+            if params is None:
+                self.assertEqual(url,next_url)
+                return response(dict(features=[feature('second-page',sent=base.isoformat())]))
+            start,end = (datetime.fromisoformat(params[key]) for key in ('start','end'))
+            seen.append((start,end))
+            if start == base and end-start == timedelta(days=1):
+                return response(dict(features=overflowing))
+            value = feature(start.isoformat(),sent=start.isoformat())
+            if start == base:
+                return response(dict(features=[value],pagination=dict(next=next_url)))
+            return response(dict(features=[value]))
+        self.session.get.side_effect = get
+        result = download_recent(ArchiveQuery.latest(),self.store,parse,session=self.session,now=self.now)
+        self.assertEqual(result['imported'],9)
+        self.assertEqual(result['received'],9)
+        self.assertEqual(self.store.history_count(),9)
+        self.assertFalse(any(row['id'].startswith('overflow-') for row in self.store.search_history()))
+        self.assertEqual(seen[1],(base,base+timedelta(hours=12)))
+        self.assertEqual(seen[2],(base+timedelta(hours=12),base+timedelta(days=1)))
+        self.assertEqual(seen[-1][1],self.now)
+
+    def test_failure_in_final_daily_batch_keeps_entire_week_unimported(self):
+        stable = feature()
+        self.session.get.side_effect = [response(dict(features=[stable])) for _ in range(6)] + [requests.Timeout('last day')]
+        with self.assertRaises(requests.Timeout):
+            download_recent(ArchiveQuery.latest(),self.store,parse,session=self.session,now=self.now)
+        self.assertEqual(self.store.history_count(),0)
+        self.assertEqual(self.session.get.call_count,7)
+
+    def test_adjacent_daily_boundary_versions_are_imported_once(self):
+        stable = feature()
+        self.session.get.return_value = response(dict(features=[stable]))
+        result = download_recent(ArchiveQuery.latest(),self.store,parse,session=self.session,now=self.now)
+        self.assertEqual(result,dict(received=7,imported=1,duplicates=6,skipped=0))
+        self.assertEqual(self.store.history_count(),1)
+
     def test_import_never_mutates_live_state_or_receipts_and_does_not_suppress_later_live_alert(self):
         value = feature(expires=(self.now+timedelta(days=1)).isoformat())
         self.session.get.return_value = response(dict(features=[value]))
@@ -220,7 +293,7 @@ class DownloadGuiTests(unittest.TestCase):
         self.assertTrue(condition())
 
     def open(self):
-        self.panel.download_button.invoke()
+        self.panel.open_download()
         dialog = self.panel.downloader
         dialog.state.set('OK')
         return dialog
@@ -228,9 +301,10 @@ class DownloadGuiTests(unittest.TestCase):
     def test_optional_download_runs_off_gui_thread_updates_history_and_sends_no_notifications(self):
         session = MagicMock()
         worker_threads = []
+        archived = feature()
         def get(*args,**kwargs):
             worker_threads.append(threading.get_ident())
-            return response(dict(features=[feature()]))
+            return response(dict(features=[archived]))
         session.get.side_effect = get
         with patch('historical_alerts.requests.Session',return_value=session):
             dialog = self.open()
@@ -249,13 +323,21 @@ class DownloadGuiTests(unittest.TestCase):
         self.assertLess(dialog.download_button.widget.winfo_rooty()+dialog.download_button.widget.winfo_height(),
                         dialog.window.root.winfo_rooty()+dialog.window.root.winfo_height())
 
-    def test_bad_dates_show_error_without_starting_worker(self):
-        dialog = self.open()
-        dialog.start.set('2001-01-01')
-        dialog.download_button.invoke()
-        self.assertIsNone(self.panel.download_future)
-        self.assertIn('seven-day',dialog.message.get())
-        self.assertFalse(dialog.busy)
+    def test_one_click_uses_latest_week_without_date_inputs(self):
+        session = MagicMock()
+        session.get.return_value = response(dict(features=[feature()]))
+        with patch('historical_alerts.requests.Session',return_value=session):
+            self.panel.download_button.invoke()
+            dialog = self.panel.downloader
+            self.assertFalse(hasattr(dialog,'start'))
+            self.assertFalse(hasattr(dialog,'end'))
+            self.pump(lambda:not dialog.busy)
+        self.assertEqual(session.get.call_count,7)
+        starts = [datetime.fromisoformat(call.kwargs['params']['start']) for call in session.get.call_args_list]
+        ends = [datetime.fromisoformat(call.kwargs['params']['end']) for call in session.get.call_args_list]
+        self.assertEqual(ends[-1]-starts[0],timedelta(days=7))
+        self.assertEqual(self.ui.history.history_count(),1)
+        self.assertEqual(dialog.state.get(),'All US')
 
     def test_all_us_selection_requests_nationwide_history(self):
         session = MagicMock()
@@ -267,6 +349,22 @@ class DownloadGuiTests(unittest.TestCase):
             self.pump(lambda:not dialog.busy)
         self.assertNotIn('area',session.get.call_args.kwargs['params'])
         self.assertEqual(self.panel.rows[0]['locations'],'NWS archive · US')
+
+    def test_options_persist_for_subsequent_one_click_download(self):
+        dialog = self.open()
+        dialog.state.set('FL')
+        dialog.event.set('Hurricane watches and warnings')
+        dialog.save_options()
+        dialog.close()
+        session = MagicMock()
+        session.get.return_value = response(dict(features=[]))
+        with patch('historical_alerts.requests.Session',return_value=session):
+            self.panel.download_button.invoke()
+            self.pump(lambda:not self.panel.downloader.busy)
+        self.assertEqual(session.get.call_count,7)
+        for call in session.get.call_args_list:
+            self.assertEqual(call.kwargs['params']['area'],'FL')
+            self.assertEqual(call.kwargs['params']['event'],'Hurricane Warning,Hurricane Watch')
 
     def test_close_while_http_request_is_pending_cancels_without_blocking_gui(self):
         started, release = threading.Event(), threading.Event()

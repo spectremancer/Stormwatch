@@ -74,7 +74,8 @@ class ApplicationMenu:
         data = self.groups['Data']
         owner.data_menu = data
         data.add_command('Metrics', owner.open_metrics)
-        data.add_command('Download NWS History…', self.download_history)
+        data.add_command('Download Latest 7 Days', self.download_history)
+        data.add_command('History Download Options…', lambda: (self.show_tab('History'), owner.history_panel.open_download()))
         data.add_command('Export Matching History CSV…', self.export_history)
         data.add_command('Import NWS Alert Data…', self.import_data)
         data.add_command('Data Sources…', self.data_sources)
@@ -167,7 +168,7 @@ class ApplicationMenu:
 
     def download_history(self):
         self.show_tab('History')
-        self.owner.history_panel.open_download()
+        self.owner.history_panel.download_latest()
 
     def import_data(self):
         if self.import_busy:

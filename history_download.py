@@ -1,8 +1,7 @@
 """Optional recent NWS archive download dialog; workers never access Tk."""
-from datetime import datetime, timedelta
 import threading
 
-from TkFlow import Button, Dropdown, Label, TextInput, Window
+from TkFlow import Button, Dropdown, Label, Window
 from historical_alerts import ArchiveQuery, DownloadCancelled, download_recent
 from locations import STATE_CODES
 from event_catalog import WEATHER_EVENTS, CATEGORY_LABELS, event_category
@@ -30,45 +29,53 @@ class HistoryDownload:
               'Older dates need a different archive. The oldest available day may be partial.\n'
               'Downloads go only to History and never trigger live notifications.',
               style='Muted.TLabel',wraplength=550)
-        dates = self.window.row(padding=0)
-        today = datetime.now().date()
-        Label(dates,'From')
-        self.start = TextInput(dates,str(today-timedelta(days=1)),width=12)
-        Label(dates,'Through')
-        self.end = TextInput(dates,str(today),width=12)
-        Label(self.window,'Dates use your local calendar: YYYY-MM-DD.',style='Muted.TLabel')
+        Label(self.window,'Period: latest 7 days — selected automatically at download time.',
+              style='Muted.TLabel',wraplength=550)
+        saved = self.owner.history.setting('archive_download_options', {})
+        if not isinstance(saved, dict):
+            saved = {}
         area = self.window.row(padding=0)
         Label(area,'Coverage')
         states = self.owner.profile.states
-        self.state = Dropdown(area,['Choose state','All US']+sorted(STATE_CODES),
-                              value=states[0] if states else 'Choose state',width=14)
+        coverage = saved.get('coverage', states[0] if states else 'All US')
+        if coverage not in STATE_CODES and coverage != 'All US':
+            coverage = 'All US'
+        self.state = Dropdown(area,['All US']+sorted(STATE_CODES),value=coverage,width=14,
+                              on_change=lambda _:self.save_options())
         options = list(EVENTS) + sorted(set(WEATHER_EVENTS) | set(self.owner.profile.events))
-        self.event = Dropdown(self.window,options,value='Tornado watches and warnings')
-        self.message = Label(self.window,'Choose dates, coverage and event types, then download.',
+        event = saved.get('event','All weather events')
+        self.event = Dropdown(self.window,options,value=event if event in options else 'All weather events',
+                              on_change=lambda _:self.save_options())
+        self.message = Label(self.window,'Seven daily requests are queued automatically. Busy days split into smaller batches.',
                              style='Muted.TLabel',wraplength=550)
         tools = self.window.row(padding=0)
-        self.download_button = Button(tools,'Download to History',self.start_download)
+        self.download_button = Button(tools,'Download Latest 7 Days',self.start_download)
         self.cancel_button = Button(tools,'Cancel download',self.cancel_download)
         self.cancel_button.disable()
-        self.controls = (self.start,self.end,self.state,self.event)
+        self.controls = (self.state,self.event)
+
+    def save_options(self):
+        self.owner.history.save_setting('archive_download_options',
+            dict(coverage=self.state.get(),event=self.event.get()))
 
     def start_download(self):
         if self.busy:
             return
         event = self.event.get()
         state = 'US' if self.state.get() == 'All US' else self.state.get()
-        query = ArchiveQuery(self.start.get().strip(),self.end.get().strip(),state,EVENTS.get(event,event))
+        query = ArchiveQuery.latest(state,EVENTS.get(event,event))
         try:
             query.parameters()
         except ValueError as error:
             self.message.set(str(error))
             return
+        self.save_options()
         self.cancel.clear()
         self.busy = True
         for control in self.controls + (self.download_button,self.panel.download_button):
             control.disable()
         self.cancel_button.enable()
-        self.message.set('Downloading from NWS… Monitoring continues while this runs.')
+        self.message.set('Downloading the latest 7 days from NWS in daily batches… Monitoring continues.')
         try:
             self.panel.download_future = self.owner.app.run_in_thread(
                 download_recent,query,self.panel.store,self.owner.service.parse_alert,self.cancel,
@@ -79,7 +86,7 @@ class HistoryDownload:
 
     def progress(self, count):
         if not self.window._closed:
-            self.message.set(f'Downloaded {count:,} NWS messages. Checking remaining pages…')
+            self.message.set(f'Fetched {count:,} NWS messages. Processing the daily request queue…')
 
     def finish(self):
         self.busy = False
@@ -95,7 +102,7 @@ class HistoryDownload:
         message = (f"Imported {result['imported']:,} changes · {result['duplicates']:,} already recorded · "
                    f"{result['skipped']:,} unsupported/test messages skipped. No live notifications sent.")
         if not result['received']:
-            message = 'NWS returned no alerts for these dates, coverage and event types. No records were added.'
+            message = 'NWS returned no alerts in the latest 7 days for this coverage and event selection. No records were added.'
         self.panel.message.set(message)
         if not self.window._closed:
             self.message.set(message)
