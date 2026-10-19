@@ -15,8 +15,8 @@ import pygame
 
 from TkFlow import App, Button, Checkbox, Dropdown, Form, Label, Menu, TextArea, Window
 from WeatherService import WeatherService
-from alert_history import AlertHistory, instant, reference_ids
-from dashboard_views import AlertMap, Cards, Tabs, LocationOverview, threat_priority
+from alert_history import AlertHistory, instant, reference_ids, expiration_of
+from dashboard_views import AlertMap, Cards, Tabs, LocationOverview, threat_priority, active_sort_key
 from desktop import Tray, set_login, configure_identity
 from location_wizard import LocationWizard
 from delivery_panel import DeliveryPanel
@@ -27,7 +27,7 @@ from history_panel import HistoryPanel
 from radar_panel import RadarPanel
 from sound_preferences import SoundPreferences
 from notification_explanations import decisions, explanation_text
-from speech import SpeechService, SpeechCancelled, announcement, issued_after
+from speech import SpeechService, SpeechCancelled, announcement, batch_announcement, issued_after
 from metrics import Metrics
 from event_catalog import WEATHER_EVENTS, DEFAULT_EVENTS, CRITICAL_EVENTS, EVENT_COLORS, event_category
 
@@ -67,6 +67,7 @@ class StormwatchApp:
         self.speech_future = None
         self.speech_pending = {}
         self.speech_current = None
+        self.speech_current_jobs = []
         self.speech_started_at = None
         self.cancel_since = datetime.now(timezone.utc) - timedelta(minutes=15)
         self.loading_profile = False
@@ -498,7 +499,7 @@ class StormwatchApp:
                         for previous, status in self.history.cancel_references(alert):
                             if any(p.matches(previous) for p in self.profiles):
                                 messages.append((previous,status,[]))
-                    end = instant(alert.get("ends") or alert.get("expires"))
+                    end = expiration_of(alert)
                     expired = end and end <= datetime.now(timezone.utc)
                     speech_baseline = not issued_after(alert,self.speech_started_at)
                     for profile in matched or prior_matches:
@@ -507,7 +508,7 @@ class StormwatchApp:
                         for channel,choice in choices.items():
                             self.history.record_decision(alert['id'],version,profile,channel,**choice)
                             enabled = profile in matched and profile.allows(alert,channel)
-                            if enabled and not (expired and alert.get('message_type') != 'Cancel') and not (channel in ('sound','speech') and (expired or kind == 'Cancelled')):
+                            if enabled and kind not in ('Superseded','No longer active') and not (expired and alert.get('message_type') != 'Cancel') and not (channel in ('sound','speech') and (expired or kind in ('Cancelled','Expired'))):
                                 channel_quiet = (legacy or speech_baseline) if channel == 'speech' else quiet
                                 if channel == 'speech' and channel_quiet:
                                     self.history.suppress_delivery(alert['id'],version,profile.id,channel,choice['reason'])
@@ -541,7 +542,9 @@ class StormwatchApp:
         self.update_health()
 
     def send_notifications(self, generation, jobs, manual=False):
-        errors = []
+        voice = [job for job in jobs if job[3]=='speech']
+        errors = self.send_speech_batch(generation,voice,manual) if voice else []
+        jobs = [job for job in jobs if job[3]!='speech']
         grouped = {}
         for alert, version, _, channel, kind in jobs:
             grouped[(alert["id"], version, channel)] = (alert, kind)
@@ -555,7 +558,7 @@ class StormwatchApp:
                     continue
                 if channel in ('sound','speech') and self.history.get_alert(alert_id)['status'] != 'Active':
                     continue
-                end = instant(alert.get("ends") or alert.get("expires"))
+                end = expiration_of(alert)
                 if end and end <= datetime.now(timezone.utc) and kind != "Cancelled":
                     continue
                 profiles = []
@@ -594,17 +597,94 @@ class StormwatchApp:
                     self.history.combined_receipt(alert_id, version, channel, profiles)
         return errors
 
-    def enqueue_speech(self, generation, jobs):
-        for job in sorted(jobs,key=lambda item:threat_priority(item[0]),reverse=True):
-            key = (job[0]['id'],job[1])
-            if key == self.speech_current or key in self.speech_pending:
+    def speech_eligible(self, job):
+        alert,version,_,_,kind = job
+        if kind in ('Expired','Cancelled','Superseded','No longer active') or (alert.get('message_type') or '').lower()=='cancel':
+            return False
+        end = expiration_of(alert)
+        return bool(issued_after(alert,self.speech_started_at) and
+                    (end is None or end>datetime.now(timezone.utc)) and self.history.is_active(alert['id'],version))
+
+    def send_speech_batch(self, generation, jobs, manual=False):
+        grouped, errors = {}, []
+        for job in jobs:
+            grouped.setdefault(job[0]['event'],{})[(job[0]['id'],job[1])] = job
+        for members in grouped.values():
+            if not self.running or generation!=self.generation or not self.speech_fresh():
+                break
+            ready = []
+            for job in members.values():
+                if not self.speech_eligible(job):
+                    continue
+                alert,version,_,_,kind = job
+                profiles = []
+                for profile in list(self.profiles):
+                    if profile.matches(alert) and profile.allows(alert,'speech'):
+                        row = self.history.delivery(alert['id'],version,profile.id,'speech')
+                        if row and row['state'] in ('pending','failed') and (not manual or row['state']=='failed'):
+                            profiles.append(profile)
+                if not profiles:
+                    continue
+                submission = self.history.submission(alert['id'],version,'speech')
+                if submission['state']=='sent' or (submission['attempts']>=3 and not manual):
+                    self.history.share_submission(alert['id'],version,'speech',profiles,submission)
+                    continue
+                for profile in profiles:
+                    self.history.record_decision(alert['id'],version,profile,'speech',**decisions(profile,alert,kind)['speech'])
+                ready.append((job,profiles))
+            if not ready:
                 continue
-            if len(self.speech_pending) >= 32:
-                lowest = min(self.speech_pending,key=lambda k:threat_priority(self.speech_pending[k][1][0]))
-                if threat_priority(job[0]) <= threat_priority(self.speech_pending[lowest][1][0]):
+            try:
+                self.speaker.speak(batch_announcement([job[0] for job,_ in ready],
+                    list({p.id:p for _,profiles in ready for p in profiles}.values())),
+                    should_continue=lambda:self.running and generation==self.generation and self.speech_fresh()
+                        and all(self.speech_eligible(job) for job,_ in ready))
+            except SpeechCancelled:
+                if self.running and generation==self.generation:
+                    remaining = [job for job,_ in ready if self.speech_eligible(job)]
+                    self.app.call_soon(self.enqueue_speech,generation,remaining,True)
+                continue
+            except Exception as error:
+                with self.history.transaction():
+                    for job,profiles in ready:
+                        if self.speech_eligible(job):
+                            self.history.combined_receipt(job[0]['id'],job[1],'speech',profiles,error)
+                errors.append(f'{ready[0][0][0]["event"]} speech: {error}')
+            else:
+                with self.history.transaction():
+                    for job,profiles in ready:
+                        if self.speech_eligible(job):
+                            self.history.combined_receipt(job[0]['id'],job[1],'speech',profiles)
+        return errors
+
+    def prune_speech(self):
+        for key,(generation,members) in list(self.speech_pending.items()):
+            valid = {identity:job for identity,job in members.items()
+                     if generation==self.generation and self.speech_eligible(job)}
+            if valid:
+                self.speech_pending[key] = (generation,valid)
+            else:
+                self.speech_pending.pop(key,None)
+        if self.speech_current_jobs and not all(self.speech_eligible(job) for job in self.speech_current_jobs):
+            self.speaker.stop()
+
+    def enqueue_speech(self, generation, jobs, requeue=False):
+        if generation!=self.generation or not self.running:
+            return
+        self.prune_speech()
+        for job in sorted(jobs,key=lambda item:threat_priority(item[0]),reverse=True):
+            identity = (job[0]['id'],job[1])
+            if (not requeue and identity in (self.speech_current or ())) or not self.speech_eligible(job):
+                continue
+            key = (generation,job[0]['event'])
+            if key not in self.speech_pending and len(self.speech_pending)>=32:
+                lowest = min(self.speech_pending,key=lambda k:max(threat_priority(j[0]) for j in self.speech_pending[k][1].values()))
+                if threat_priority(job[0])<=max(threat_priority(j[0]) for j in self.speech_pending[lowest][1].values()):
                     continue
                 self.speech_pending.pop(lowest)
-            self.speech_pending[key] = (generation,job)
+            members = self.speech_pending.setdefault(key,(generation,{}))[1]
+            if len(members)<1000:
+                members[identity] = job
         self.start_speech()
 
     def start_speech(self):
@@ -612,15 +692,20 @@ class StormwatchApp:
             return
         if not self.speech_fresh():
             return
-        key = max(self.speech_pending,key=lambda k:threat_priority(self.speech_pending[k][1][0]))
-        generation,job = self.speech_pending.pop(key)
-        self.speech_busy, self.speech_current = True,key
+        self.prune_speech()
+        if not self.speech_pending:
+            return
+        key = max(self.speech_pending,key=lambda k:max(threat_priority(j[0]) for j in self.speech_pending[k][1].values()))
+        generation,members = self.speech_pending.pop(key)
+        self.speech_current_jobs = list(members.values())
+        self.speech_busy, self.speech_current = True,frozenset(members)
         try:
-            self.speech_future = self.app.run_in_thread(self.send_notifications,generation,[job],
+            self.speech_future = self.app.run_in_thread(self.send_notifications,generation,self.speech_current_jobs,
                 on_result=self.speech_done,on_error=self.speech_failed)
         except RuntimeError:
             self.speech_busy, self.speech_current = False,None
-            self.speech_pending[key] = (generation,job)
+            self.speech_current_jobs = []
+            self.speech_pending[key] = (generation,members)
             self.status.set('Speech is waiting for a background worker. It will be checked on the next refresh.')
 
     def speech_fresh(self):
@@ -629,6 +714,7 @@ class StormwatchApp:
 
     def speech_done(self, errors):
         self.speech_busy, self.speech_current = False,None
+        self.speech_current_jobs = []
         self.refresh_records()
         if errors:
             self.status.set('Speech failed · See Delivery for the reason and retry options.')
@@ -636,6 +722,7 @@ class StormwatchApp:
 
     def speech_failed(self, error):
         self.speech_busy, self.speech_current = False,None
+        self.speech_current_jobs = []
         self.status.set(f'Speech worker failed: {error}')
         self.start_speech()
 
@@ -699,15 +786,18 @@ class StormwatchApp:
             if not issued_after(row['alert'],self.speech_started_at):
                 self.status.set('Speech only covers alerts issued after this monitoring session started.')
                 return
-            self.speech_pending.pop((row['id'],row['version']),None)
+            for _,members in self.speech_pending.values():
+                members.pop((row['id'],row['version']),None)
             self.speech_busy = True
-            self.speech_current = (row['id'],row['version'])
+            self.speech_current = frozenset({(row['id'],row['version'])})
+            self.speech_current_jobs = [(row['alert'],row['version'],profile.id,'speech',row['kind'])]
             try:
                 self.speech_future = self.app.run_in_thread(self.send_notifications,self.generation,
                     [(row['alert'],row['version'],profile.id,'speech',row['kind'])],True,
                     on_result=self.speech_done,on_error=self.speech_failed)
             except RuntimeError:
                 self.speech_busy, self.speech_current = False,None
+                self.speech_current_jobs = []
                 self.status.set('The background queue is busy. Try the speech retry again shortly.')
             return
         self.delivery_busy = True
@@ -736,7 +826,7 @@ class StormwatchApp:
             names = [p.name for p in self.profiles if p.matches(row["alert"])]
             if names:
                 result.append(dict(row, locations=names))
-        return result
+        return sorted(result,key=active_sort_key)
 
     def render_active(self):
         rows = self.matching_rows()
@@ -774,6 +864,7 @@ class StormwatchApp:
     def tick(self):
         if self.app._closed:
             return
+        self.prune_speech()
         self.cards.tick()
         self.overview.tick()
         self.demo.tick()
@@ -785,6 +876,7 @@ class StormwatchApp:
             for alert, kind in changes:
                 if any(p.matches(alert) for p in self.profiles):
                     self.append_alert(alert, kind)
+        if changes or (self.snapshot and not set(self.snapshot).issubset(self.history.active_ids())):
             self.render_active()
         self.health_timer = self.app.after(1000, self.tick)
 

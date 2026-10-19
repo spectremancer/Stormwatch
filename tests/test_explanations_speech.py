@@ -126,7 +126,7 @@ class NativeSpeechTests(unittest.TestCase):
 
     def test_announcement_is_brief_and_labels_simulations_and_updates(self):
         text = announcement(alert(simulated=True),[LocationProfile(name='Home'),LocationProfile(name='Family')],'Extended')
-        self.assertIn('Simulation. Extended. Tornado Warning for Home, Family.',text)
+        self.assertIn('Simulation. Extended. Tornado Warning for Cook County.',text)
         self.assertIn('Until',text)
         self.assertNotIn('Seek shelter',text)
 
@@ -256,8 +256,11 @@ class ExplanationSpeechGuiTests(unittest.TestCase):
         self.receive([a])
         self.receive([a])
         self.voice.assert_called_once()
-        self.assertIn('Family',self.voice.call_args.args[0])
-        self.assertIn('United States',self.voice.call_args.args[0])
+        self.assertIn('Cook County',self.voice.call_args.args[0])
+        self.assertNotIn('United States',self.voice.call_args.args[0])
+        version = self.ui.history.get_alert(a['id'])['version']
+        self.assertEqual(set(json.loads(self.ui.history.submission(a['id'],version,'speech')['members'])),
+                         {'Family','United States'})
         self.receive([dict(a,headline='Changed')])
         self.assertEqual(self.voice.call_count,2)
         self.assertNotIn('Matched nationwide',self.ui.feed.get())
@@ -326,7 +329,11 @@ class ExplanationSpeechGuiTests(unittest.TestCase):
 
     def test_queue_is_bounded_and_waits_for_fresh_data(self):
         self.ui.running = True
-        jobs = [(alert(id=str(i)),str(i),self.ui.profile.id,'speech','New') for i in range(100)]
+        jobs = []
+        for i in range(100):
+            a = alert(id=str(i),event=f'Synthetic {i} Warning')
+            version,_,_ = self.ui.history.observe(a)
+            jobs.append((a,version,self.ui.profile.id,'speech','New'))
         self.ui.enqueue_speech(self.ui.generation,jobs)
         self.assertEqual(len(self.ui.speech_pending),32)
         self.assertFalse(self.ui.speech_busy)

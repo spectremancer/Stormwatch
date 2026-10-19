@@ -9,7 +9,7 @@ from tkinter import font as tkfont
 
 from TkFlow.widget import Widget
 from TkFlow._layout import _Layout
-from alert_history import instant
+from alert_history import instant, expiration_of
 from locations import rings
 from radar import Viewport
 from event_catalog import event_category, event_color
@@ -18,7 +18,7 @@ BG, PANEL, TEXT, MUTED = "#0b1424", "#142238", "#e5edf8", "#9aaec7"
 
 
 def countdown(alert, now=None):
-    end = instant(alert.get("ends") or alert.get("expires"))
+    end = expiration_of(alert)
     if not end:
         return "Expiration unavailable"
     seconds = int((end - (now or datetime.now(timezone.utc))).total_seconds())
@@ -137,12 +137,20 @@ class Cards(Widget):
 
 def threat_priority(alert):
     """Warning first, then severity; critical types, category and expiry break ties."""
-    end = instant(alert.get('ends') or alert.get('expires'))
+    end = expiration_of(alert)
     return (int(event_category(alert['event'])=='warning'),
             {'Extreme':4,'Severe':3,'Moderate':2,'Minor':1}.get(alert.get('severity'),0),
             int(alert['event'].startswith(('Tornado','Hurricane'))),
             {'warning':5,'watch':4,'advisory':3,'other':2,'statement':1,'outlook':0}.get(event_category(alert['event']),0),
             -end.timestamp() if end else float('-inf'))
+
+
+def active_sort_key(row):
+    alert = row['alert']
+    end = expiration_of(alert)
+    return ({'warning':0,'watch':1}.get(event_category(alert['event']),2),
+            -{'Extreme':4,'Severe':3,'Moderate':2,'Minor':1}.get(alert.get('severity'),0),
+            -end.timestamp() if end else float('inf'),alert['event'].casefold(),row['id'])
 
 
 class LocationOverview(Cards):

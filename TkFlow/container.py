@@ -17,11 +17,12 @@ class Container(Widget, _Layout):
                  orientation: str = "vertical", spacing: int = 8,
                  padding: Any = 8, title: str | None = None,
                  expand: bool = False, fill: str = "x", padx: int = 0,
-                 pady: int = 0, **options: Any) -> None:
+                 pady: int = 0, _master: Any = None, **options: Any) -> None:
         parent.app._check_thread()
         self._init_layout(orientation, spacing)
-        frame = (ttk.Frame(parent.widget, padding=padding, **options) if title is None
-                 else ttk.LabelFrame(parent.widget, text=title, padding=padding, **options))
+        master = parent.widget if _master is None else _master
+        frame = (ttk.Frame(master, padding=padding, **options) if title is None
+                 else ttk.LabelFrame(master, text=title, padding=padding, **options))
         self._attach(parent, frame, expand=expand, fill=fill, padx=padx, pady=pady)
 
     def _dispose(self) -> None:

@@ -49,13 +49,12 @@ class Form(Section):
             self.canvas = tk.Canvas(self.widget, highlightthickness=0, height=240, width=300)
             scrollbar = ttk.Scrollbar(self.widget, orient="vertical", command=self.canvas.yview)
             self.canvas.configure(yscrollcommand=scrollbar.set)
-            # Create the embedded frame after the canvas so its native window
-            # stacks above the canvas on Windows as well as X11.
-            self.body = self.column(padding=0, expand=True, fill="both")
+            # Native canvas children are clipped to the viewport. Sibling
+            # windows can paint over the section title when scrolled.
+            self.body = self.column(padding=0, expand=True, fill="both",_master=self.canvas)
             self.body.widget.grid_forget()
             item = self.canvas.create_window(0, 0, window=self.body.widget, anchor="nw")
             self.canvas.grid(row=0, column=0, sticky="nsew")
-            self.body.widget.lift(self.canvas)
             scrollbar.grid(row=0, column=1, sticky="ns")
             self.body.widget.bind("<Configure>", lambda event: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
             self.canvas.bind("<Configure>", lambda event: self.canvas.itemconfigure(item, width=event.width))

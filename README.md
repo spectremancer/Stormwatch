@@ -192,10 +192,19 @@ still be enabled and the event selected for monitoring. **All event types** also
 allows future monitored types; **No spoken events** leaves automatic speech
 silent. **Test voice** is an explicit preview, even with automatic speech off.
 
-Announcements read the event, matching saved-location names, update type when
-applicable, and the expiration in the computer's local timezone. They do not
-rewrite safety instructions or infer storm movement. For example: “Tornado
-Warning for Home, Family. Until October 17 at 8:30 PM CDT.”
+After a complete NWS refresh has been processed, eligible speech is grouped by
+event type. Twelve new Gale Warnings produce one Gale Warning report rather than
+twelve separate announcements. The report uses deduplicated NWS affected-area
+names, with punctuation pauses between locations, followed by the latest known
+expiration among that batch's still-active alerts in the computer's local time.
+For example: “Gale Warning for North coastal waters; South coastal waters;
+Outer waters. Until October 19 at 7 PM local time.” Broad profile names such as
+US or United States are not substituted for available NWS area descriptions.
+
+Reports list up to 16 areas within a 480-character location budget and summarize
+additional areas by count so nationwide reports remain brief. Full coverage is
+available in alert details and the map. Missing expiration information is stated
+explicitly. Reports do not rewrite safety instructions or infer storm movement.
 
 Speech uses local operating-system voices, with no cloud speech service or API key:
 
@@ -229,11 +238,19 @@ Old pending/failed speech jobs are suppressed on resume rather than replayed,
 and speech retries must satisfy the current session cutoff. **Test voice** and
 explicit simulation previews remain available.
 
-The speech queue holds at most 32 alert versions, prioritizing warnings, severity,
-and tornado/hurricane events. Eligible overflow remains pending for a later
-refresh. Before speaking, the worker checks current preferences, fresh monitoring
-data, version, and expiration. Cancelled, superseded, and expired alerts stay
-silent. Pausing monitoring clears the queue and stops the owned voice process;
+The speech queue holds at most 32 event-type batches, with up to 1,000 unique
+alert versions in each, prioritizing warnings, severity, and tornado/hurricane
+events. Eligible overflow remains pending for a later refresh. Per-alert and
+per-location receipts remain independent: one successful spoken batch marks its
+eligible members submitted, failed members can retry together, and successful
+members are not repeated with later additions. Before speaking, the worker checks
+current preferences, fresh monitoring data, version, and expiration. Only active
+messages are spoken; cancellations, expirations, superseded messages and messages
+no longer active never enter the report. Invalid queued members are removed. If
+an alert becomes invalid during a report, its owned voice process is stopped and
+remaining active, unsent members can be regrouped; an interrupted report may
+therefore repeat part of the still-valid coverage.
+Pausing monitoring clears the queue and stops the owned voice process;
 closing the application also stops it. Each native speech command has a 45-second
 timeout. Completion does not prove someone heard the announcement.
 
@@ -243,6 +260,9 @@ timeout. Completion does not prove someone heard the announcement.
 affected area, severity, issue time, and an expiration countdown. Cards are
 paginated at 20 per page to handle large national alert lists. Opening details
 shows the full NWS description and instructions and an official HTTPS link.
+Cards sort warnings before watches, then other categories; within each group,
+official severity sorts highest first, followed by expiration longest to shortest.
+Unknown expiration times sort last within the same category/severity group.
 Stored active alerts remain visible after a restart, with a **NO LIVE DATA**
 notice until a fresh request succeeds.
 
@@ -259,6 +279,14 @@ reported as incomplete coverage and retried. If an alert disappears without an
 explicit cancellation, it is labeled **No longer active**, not cancelled.
 Expiration is also checked locally every second. Cancellations older than the
 startup lookback may only be identified as no longer active.
+Active cards, map polygons, location counts, and the current snapshot remove
+cancelled, superseded, disappeared and expired alerts. Effective expiration is
+the earlier valid NWS `expires` or `ends` timestamp, so a message is not kept past
+its validity merely because its hazard end is later. Existing expiry indexes are
+updated once on upgrade. Identical or previously recorded cancelled/superseded
+versions cannot be resurrected by a stale active response. Expiration cleanup
+continues while paused or offline and does not wait for another API refresh.
+Stored history and notification receipts are retained.
 
 **Alert map** supports drag-to-pan, wheel/button zoom, fit-to-content, saved-point
 markers, and clicking an alert outline for details. Public-domain Natural Earth
@@ -587,6 +615,8 @@ monitor; follow official local weather guidance.
 
 Editable text fields use black text and a black cursor on a white background,
 including editable search dropdowns. Disabled fields use gray text.
+Scrollable form content is a native child of its canvas, keeping the event list
+clipped inside its viewport rather than painting over the Event types heading.
 
 Incoming alerts are processed in batches of 20, yielding to the interface between
 batches. Each batch shares a database transaction and a single feed update.

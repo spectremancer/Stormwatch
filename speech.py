@@ -4,6 +4,7 @@ import shutil
 import subprocess
 import threading
 from datetime import datetime
+import re
 
 
 class SpeechCancelled(RuntimeError):
@@ -20,14 +21,48 @@ def issued_after(alert, started_at):
 
 
 def announcement(alert, profiles, kind='New'):
-    from alert_history import instant
-    names = [p.name for p in profiles]
-    location = ', '.join(names[:5]) + (f', and {len(names)-5} other saved locations' if len(names)>5 else '')
-    end = instant(alert.get('ends') or alert.get('expires'))
-    until = f" Until {end.astimezone():%B %d at %I:%M %p %Z}." if end else ''
-    prefix = 'Simulation. ' if alert.get('simulated') else ''
+    return batch_announcement([alert],profiles,kind)
+
+
+def batch_announcement(alerts, profiles=(), kind='New'):
+    """One concise event report using NWS areas, punctuation pauses and latest expiry."""
+    from alert_history import expiration_of
+    if not alerts or len({alert['event'] for alert in alerts})!=1:
+        raise ValueError('A speech batch must contain one event type.')
+    locations, seen = [], set()
+    for alert in alerts:
+        for value in (alert.get('area') or '').split(';'):
+            value = re.sub(r'\s+',' ',value).strip(' ,.;')
+            if value and value.casefold() not in ('area unavailable','unknown') and value.casefold() not in seen:
+                seen.add(value.casefold())
+                locations.append(value)
+    if not locations:
+        locations = list(dict.fromkeys(p.name for p in profiles if p.name.casefold() not in
+            ('us','usa','all us','all us alerts','nationwide','united states','united states of america')))
+    displayed, size = [], 0
+    for location in locations:
+        if len(displayed)>=16 or size+len(location)>480:
+            break
+        displayed.append(location)
+        size += len(location)
+    remaining = len(locations)-len(displayed)
+    area = '; '.join(displayed) if displayed else f'{len(locations)} affected areas' if locations else 'the affected area'
+    if displayed and remaining>0:
+        area += f'; and {remaining} additional affected areas'
+    ends = [end for alert in alerts if (end := expiration_of(alert)) is not None]
+    latest = max(ends) if ends else None
+    until = ''
+    if latest:
+        local = latest.astimezone()
+        clock = local.strftime('%I:%M %p').lstrip('0').replace(':00','')
+        until = f" Until {local:%B %d} at {clock} local time."
+    else:
+        until = ' Expiration time unavailable.'
+    if len(ends)!=len(alerts) and ends:
+        until += ' Some expiration times are unavailable.'
+    prefix = 'Simulation. ' if any(a.get('simulated') for a in alerts) else ''
     update = f'{kind}. ' if kind != 'New' else ''
-    return f"{prefix}{update}{alert['event']} for {location[:220]}.{until}"
+    return f"{prefix}{update}{alerts[0]['event']} for {area}.{until}"
 
 
 def command():

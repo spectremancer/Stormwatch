@@ -5,7 +5,7 @@ from tkinter import ttk
 
 from TkFlow import Button, Label, Window
 from TkFlow.widget import Widget
-from alert_history import instant
+from alert_history import instant, expiration_of
 
 
 def summarize(store, active, now=None):
@@ -77,7 +77,7 @@ class Metrics:
             return
         # Copy only immutable fields from the same snapshot used by Active
         # alerts. All archive aggregation happens off the GUI thread.
-        active = [(key,alert['event'],alert.get('ends') or alert.get('expires'))
+        active = [(key,alert['event'],expiration_of(alert).isoformat() if expiration_of(alert) else '')
                   for key,alert in self.owner.snapshot.items()]
         self.owner.update_health()
         health = self.owner.health.get()

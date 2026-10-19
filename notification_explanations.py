@@ -1,13 +1,13 @@
 """Human-readable decisions shared by scheduling, delivery, and alert details."""
 from datetime import datetime, timezone
-from alert_history import instant, version_of
+from alert_history import instant, version_of, expiration_of
 
 CHANNELS = ('sound','desktop','speech')
 
 
 def decisions(profile, alert, kind='New', quiet=False, legacy=False, now=None, speech_baseline=None):
     matched, match_reason = profile.explain_match(alert)
-    end = instant(alert.get('ends') or alert.get('expires'))
+    end = expiration_of(alert)
     expired = end and end <= (now or datetime.now(timezone.utc))
     cancelled = kind == 'Cancelled' or alert.get('message_type','').lower() == 'cancel'
     result = {}

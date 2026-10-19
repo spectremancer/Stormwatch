@@ -20,6 +20,12 @@ def instant(value):
         return None
 
 
+def expiration_of(alert):
+    """Use the first known CAP message expiry or hazard end."""
+    values = [end for key in ('ends','expires') if (end := instant(alert.get(key))) is not None]
+    return min(values) if values else None
+
+
 def version_of(alert):
     # Deliberately ignore fetch time, map geometry enrichment, and profile names.
     fields = ("event", "headline", "area", "severity", "urgency", "sent", "expires",
@@ -67,10 +73,14 @@ class AlertHistory(HistoryArchive):
         alert_columns = {row[1] for row in self.connection.execute("PRAGMA table_info(alerts)")}
         if "expires_at" not in alert_columns:
             self.connection.execute("ALTER TABLE alerts ADD COLUMN expires_at TEXT NOT NULL DEFAULT ''")
-            for row in self.connection.execute("SELECT id,data FROM alerts").fetchall():
+        if not self.connection.execute("SELECT 1 FROM settings WHERE name='expiry_basis_v2'").fetchone():
+            for row in self.connection.execute("SELECT id,data,expires_at FROM alerts").fetchall():
                 alert = json.loads(row["data"])
-                end = instant(alert.get("ends") or alert.get("expires"))
-                self.connection.execute("UPDATE alerts SET expires_at=? WHERE id=?", (end.isoformat() if end else "", row["id"]))
+                end = expiration_of(alert)
+                stamp = end.isoformat() if end else ''
+                if stamp != row['expires_at']:
+                    self.connection.execute("UPDATE alerts SET expires_at=? WHERE id=?", (stamp,row['id']))
+            self.connection.execute("INSERT INTO settings VALUES ('expiry_basis_v2','true')")
         self.connection.execute("CREATE INDEX IF NOT EXISTS active_alert_expiry ON alerts(status,expires_at)")
         self.connection.execute("CREATE INDEX IF NOT EXISTS active_alert_updated ON alerts(status,updated DESC)")
         if 'summary' not in {row[1] for row in self.connection.execute('PRAGMA table_info(versions)')}:
@@ -153,6 +163,10 @@ class AlertHistory(HistoryArchive):
         data = json.dumps(alert)
         with self.transaction():
             old = self.connection.execute("SELECT * FROM alerts WHERE id=?", (alert["id"],)).fetchone()
+            if old and old['status'] in ('Cancelled','Superseded','Expired') and (
+                    old['version']==version or self.connection.execute(
+                        'SELECT 1 FROM versions WHERE id=? AND version=?',(alert['id'],version)).fetchone()):
+                return version,old['status'],False
             reference_old = None
             for ref in alert.get("references", []):
                 reference_id = ref.get("identifier") or ref.get("id") if isinstance(ref, dict) else ref
@@ -161,7 +175,7 @@ class AlertHistory(HistoryArchive):
                     reference_old = referenced
                 if referenced and alert.get("message_type", "").lower() == "update":
                     self.connection.execute("UPDATE alerts SET status='Superseded' WHERE id=?", (reference_id,))
-            end = instant(alert.get("ends") or alert.get("expires"))
+            end = expiration_of(alert)
             cancelled = alert.get("message_type", "").lower() == "cancel"
             status = "Cancelled" if cancelled else "Expired" if end and end <= now else "Active"
             if old and old["version"] == version:
@@ -315,6 +329,17 @@ class AlertHistory(HistoryArchive):
             row = self.connection.execute("SELECT version,status FROM alerts WHERE id=?", (alert_id,)).fetchone()
             return bool(row and row["version"] == version and row["status"] in ("Active", "Cancelled"))
 
+    def is_active(self, alert_id, version, now=None):
+        stamp = (now or datetime.now(timezone.utc)).astimezone(timezone.utc).isoformat()
+        with self.lock:
+            return self.connection.execute("""SELECT 1 FROM alerts WHERE id=? AND version=?
+                AND status='Active' AND (expires_at='' OR expires_at>?)""",(alert_id,version,stamp)).fetchone() is not None
+
+    def active_ids(self):
+        with self.lock:
+            return {row[0] for row in self.connection.execute("""SELECT id FROM alerts WHERE status='Active'
+                AND (expires_at='' OR expires_at>?)""",(datetime.now(timezone.utc).isoformat(),))}
+
     def delivery(self, alert_id, version, profile, channel):
         with self.lock:
             row = self.connection.execute("SELECT * FROM deliveries WHERE id=? AND version=? AND profile=? AND channel=?",
@@ -341,8 +366,9 @@ class AlertHistory(HistoryArchive):
 
     def rows(self, active_only=False):
         with self.lock:
-            sql = "SELECT alerts.*, (SELECT summary FROM versions v WHERE v.id=alerts.id AND v.version=alerts.version) AS summary FROM alerts" + (" WHERE status='Active'" if active_only else "") + " ORDER BY updated DESC"
-            return [dict(row, alert=json.loads(row["data"])) for row in self.connection.execute(sql)]
+            sql = "SELECT alerts.*, (SELECT summary FROM versions v WHERE v.id=alerts.id AND v.version=alerts.version) AS summary FROM alerts" + (" WHERE status='Active' AND (expires_at='' OR expires_at>?)" if active_only else "") + " ORDER BY updated DESC"
+            values = (datetime.now(timezone.utc).isoformat(),) if active_only else ()
+            return [dict(row, alert=json.loads(row["data"])) for row in self.connection.execute(sql,values)]
 
     def reconcile(self, current_ids=None, now=None):
         """Only decode changed alerts; without a snapshot, check indexed expirations."""
