@@ -28,7 +28,7 @@ def main():
                 assert ui.history.path == expected/'processed-alerts.sqlite3'
                 assert (expected/'storm_monitor.log').exists()
                 assert len(ui.app.root._stormwatch_icons) == 4
-                ui.commands.show_tab('Alert map')
+                ui.commands.show_tab('Map')
                 ui.app.root.update()
                 assert ui.map.canvas.winfo_ismapped()
                 window = ui.commands.general()

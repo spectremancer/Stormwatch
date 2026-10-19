@@ -195,7 +195,7 @@ Cancellations and expired versions remain silent regardless of warning rules.
 
 ### Choose which events play alert.mp3
 
-Select a location in the sidebar, then choose **Sound events**. To play sound
+Select a location in the sidebar, then choose **Alerts → Sound Settings…**. To play sound
 only for tornado and hurricane events, choose **Tornado + hurricane**, then
 **Save sound events**. This selects Tornado Warning, Tornado Watch, Hurricane
 Warning, and Hurricane Watch. You can instead uncheck **Allow sound for all
@@ -239,7 +239,7 @@ alerts, history, and receipts remain intact.
 
 ## Spoken alerts
 
-Choose a location and open **Spoken alerts**. Enable **Read alerts aloud**, choose
+Choose a location and open **Alerts → Speech Settings…**. Enable **Read alerts aloud**, choose
 individual event types or the **Tornado + hurricane** preset, then save. Speech
 is **off by default**, including for existing profiles. Its event filter is
 independent of `alert.mp3` and desktop/category preferences; the location must
@@ -343,7 +343,7 @@ versions cannot be resurrected by a stale active response. Expiration cleanup
 continues while paused or offline and does not wait for another API refresh.
 Stored history and notification receipts are retained.
 
-**Alert map** supports drag-to-pan, wheel/button zoom, fit-to-content, saved-point
+**Map** supports drag-to-pan, wheel/button zoom, fit-to-content, saved-point
 markers, and clicking an alert outline for details. Public-domain Natural Earth
 outlines are bundled for offline geographic context. NWS storm polygons are
 used where available; otherwise official affected-zone boundaries are retrieved
@@ -384,7 +384,7 @@ remain readable and are not assigned an invented comparison.
 
 ### Radar playback
 
-In **Alert map**, enable **Show recent radar**. This opt-in overlay uses
+In **Map**, enable **Show recent radar**. This opt-in overlay uses
 [RainViewer](https://www.rainviewer.com) observed precipitation imagery under
 the NWS alert boundaries and saved-location markers. Use **Play/Pause**,
 **Previous frame**, **Next frame**, and **Refresh radar**. The latest six available
@@ -502,6 +502,11 @@ is a current-session view; the **History** tab retains previous alert changes.
 
 ## Application menus
 
+The main tabs are **Locations, Active Alerts, Alert Feed, Map, Notifications,
+and History**. Demo Mode is available as a reusable popup from **Tools**, rather
+than a main tab. Closing that popup hides it and preserves its simulation state
+until Stormwatch exits.
+
 The menu bar groups commands under **File, Monitoring, Locations, Alerts, View,
 Data, Tools, Settings, and Help**. Existing sidebar controls remain available.
 
@@ -514,8 +519,8 @@ Data, Tools, Settings, and Help**. Existing sidebar controls remain available.
   choices share the sidebar setting and can be changed only while paused.
 - **Locations** opens the overview, adds/edits/removes locations, and provides a
   checked list for selecting the location whose preferences are being edited.
-- **Alerts** opens notification rules for the selected location, sound/speech
-  preferences, manual notification tests, and the event selector. Clear Alert
+- **Alerts** opens sound/speech preferences and manual notification tests.
+  Select events in the sidebar and edit location rules with the sidebar Edit button. Clear Alert
   Feed clears only the session feed, not saved history.
 - **View** navigates the main tabs, shows connection status, restores the default
   window/tab/map extent, and provides map zoom, fit, and radar controls.
@@ -525,7 +530,10 @@ Data, Tools, Settings, and Help**. Existing sidebar controls remain available.
   supported weather alerts, deduplicate versions, and run atomically in a worker.
   Imported records are labeled **Local NWS GeoJSON** and never enter live views
   or trigger notifications. Invalid issue times abort the entire import.
-- **Tools** opens simulations, delivery results, diagnostics, and the log folder.
+- **Tools** opens the Demo Mode popup, notification results, diagnostics, and the log folder.
+  Header tray/quit and sidebar sound buttons are omitted; use File and Alerts.
+  The map footer notes are omitted and its title stays on one line, leaving more
+  vertical space for the map and the sidebar event selector.
 - **Settings → General…** contains close-to-tray and Windows launch-at-login
   preferences. These controls are omitted from the sidebar and separate menu
   entries so the weather event selector has more vertical space. Settings also offers saved
@@ -645,7 +653,7 @@ export. Export cannot overwrite the application database.
 
 ## Notification delivery panel
 
-The **Delivery** tab lists sound, desktop, and enabled speech channel records separately, with
+The **Notifications** tab lists sound, desktop, and enabled speech channel records separately, with
 pagination and a **Failed only** filter. Select a row to inspect the location,
 alert version, feed logging state, scheduled time, last-attempt time, attempt
 count, shared-submission/location information, suppression reason, and the last reported error. Results distinguish
@@ -665,7 +673,7 @@ Submission results still cannot prove that a person saw or heard a notification.
 
 ## Demo mode
 
-The **Demo** tab is an isolated simulation that can run alongside live monitoring.
+**Tools → Demo Mode** opens an isolated simulation popup that can run alongside live monitoring.
 Choose a scenario and press **Run simulation** to preview a new warning, update,
 extension, cancellation, expiration, connection failure, or recovery. Sample
 cards, feed, map, and delivery results are labeled **SIMULATION**. Ending scenarios

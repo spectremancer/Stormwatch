@@ -36,13 +36,61 @@ class ApplicationMenuTests(unittest.TestCase):
         self.assertEqual([bar.entrycget(i, 'label') for i in range(bar.index('end')+1)],
                          ['File','Monitoring','Locations','Alerts','View','Data','Tools','Settings','Help'])
         menu = self.commands.groups['View'].widget
-        for label, page in [('Active Alerts','Active alerts'),('Alert Map','Alert map'),
-                            ('Historical Search','History'),('Notification Delivery','Delivery')]:
+        for label, page in [('Active Alerts','Active Alerts'),('Map','Map'),
+                            ('Historical Search','History'),('Notifications','Notifications')]:
             menu.invoke(label)
             self.assertEqual(self.ui.tabs.widget.tab(self.ui.tabs.widget.select(), 'text'), page)
         self.commands.groups['Tools'].widget.invoke('Demo Mode')
-        self.assertEqual(self.ui.tabs.widget.tab(self.ui.tabs.widget.select(),'text'), 'Demo')
+        self.assertEqual(self.ui.demo_window.root.state(), 'normal')
+        self.assertEqual(self.ui.tabs.widget.tab(self.ui.tabs.widget.select(),'text'), 'Notifications')
         self.service.fetch_alerts.assert_not_called()
+
+    def test_six_tabs_and_demo_popup_reopen_preserve_isolated_simulation(self):
+        notebook = self.ui.tabs.widget
+        self.assertEqual([notebook.tab(tab,'text') for tab in notebook.tabs()],
+                         ['Locations','Active Alerts','Alert Feed','Map','Notifications','History'])
+        self.assertIsNone(self.ui.demo)
+        self.commands.groups['Tools'].widget.invoke('Demo Mode')
+        window, panel = self.ui.demo_window, self.ui.demo
+        panel.run_scenario('new')
+        self.assertEqual(len(panel.model.store.rows(active_only=True)),1)
+        self.root.tk.call(window.root.protocol('WM_DELETE_WINDOW'))
+        self.assertEqual(window.root.state(),'withdrawn')
+        self.commands.groups['Tools'].widget.invoke('Demo Mode')
+        self.assertIs(self.ui.demo,panel)
+        self.assertIs(self.ui.demo_window,window)
+        self.assertEqual(window.root.state(),'normal')
+        self.assertEqual(len(panel.model.store.rows(active_only=True)),1)
+        self.assertEqual(self.ui.history.history_count(),0)
+        self.assertEqual(notebook.tab(notebook.select(),'text'),'Locations')
+
+    def test_redundant_controls_are_removed_and_menu_sound_test_is_guarded(self):
+        alerts = self.commands.groups['Alerts'].widget
+        labels = [alerts.entrycget(i,'label') for i in range(alerts.index('end')+1)
+                  if alerts.type(i) != 'separator']
+        self.assertNotIn('Event Types…',labels)
+        self.assertNotIn('Notification Rules…',labels)
+        self.assertIn('Sound Settings…',labels)
+        self.assertIn('Speech Settings…',labels)
+        def buttons(widget):
+            result = []
+            for child in widget.winfo_children():
+                if child.winfo_class() == 'TButton':
+                    result.append(child.cget('text'))
+                result.extend(buttons(child))
+            return result
+        visible_buttons = buttons(self.root)
+        for label in ('Minimize to tray','Quit','Sound events','Spoken alerts','Test sound'):
+            self.assertNotIn(label,visible_buttons)
+        with patch.object(self.ui.app,'run_in_thread') as worker:
+            self.ui.test_sound()
+            self.ui.test_sound()
+            worker.assert_called_once()
+        self.ui.sound_finished()
+        self.assertFalse(self.ui.sound_testing)
+        with patch.object(self.ui.app,'run_in_thread',side_effect=RuntimeError('queue full')):
+            self.ui.test_sound()
+        self.assertFalse(self.ui.sound_testing)
 
     def test_interval_and_monitoring_commands_share_existing_state(self):
         self.commands.interval_menu.widget.invoke('90 seconds')

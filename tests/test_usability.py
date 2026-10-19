@@ -174,6 +174,7 @@ class UsabilityTests(unittest.TestCase):
         self.service.deliver_sound.assert_called_once()
 
     def test_demo_scenarios_never_touch_live_history_or_devices_by_default(self):
+        self.owner.open_demo()
         demo = self.owner.demo
         for scenario in ('new', 'update', 'extend', 'cancel'):
             demo.run_scenario(scenario)
@@ -186,6 +187,7 @@ class UsabilityTests(unittest.TestCase):
         self.service.deliver_desktop.assert_not_called()
 
     def test_demo_connection_failure_retains_sample_cards(self):
+        self.owner.open_demo()
         demo = self.owner.demo
         demo.run_scenario('new')
         demo.run_scenario('offline')
@@ -196,6 +198,7 @@ class UsabilityTests(unittest.TestCase):
         self.assertIn('recovered', demo.health.get())
 
     def test_demo_fabricated_failure_retries_only_desktop_without_any_device(self):
+        self.owner.open_demo()
         demo = self.owner.demo
         demo.simulate_delivery_failure()
         desktop = next(r for r in demo.deliveries.rows if r['channel'] == 'desktop')
@@ -211,12 +214,14 @@ class UsabilityTests(unittest.TestCase):
 
     def test_demo_results_remain_visible_at_minimum_window_size(self):
         self.owner.app.root.geometry('1000x760')
-        self.owner.tabs.widget.select(self.owner.demo.tabs.parent.widget)
+        self.owner.open_demo()
+        self.owner.demo_window.root.geometry('850x680')
         self.owner.demo.simulate_delivery_failure()
         self.owner.app.root.update()
         self.assertGreaterEqual(self.owner.demo.deliveries.table.tree.winfo_height(), 80)
 
     def test_real_demo_desktop_preview_is_explicit_and_labeled(self):
+        self.owner.open_demo()
         demo = self.owner.demo
         demo.desktop.set(True)
         demo.run_scenario('new')

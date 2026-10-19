@@ -49,8 +49,6 @@ class ApplicationMenu:
         self.locations_menu = locations.dropdown('Select Location')
 
         alerts = self.groups['Alerts']
-        alerts.add_command('Event Types…', self.event_types)
-        alerts.add_command('Notification Rules…', owner.edit_profile)
         alerts.add_command('Sound Settings…', owner.edit_sound_events)
         alerts.add_command('Speech Settings…', owner.edit_speech_events)
         alerts.add_command('Test Notification…', self.test_notification)
@@ -58,9 +56,9 @@ class ApplicationMenu:
         alerts.add_command('Clear Alert Feed', owner.clear_feed)
 
         view = self.groups['View']
-        for label, tab in (('Locations', 'Locations'), ('Active Alerts', 'Active alerts'),
-                           ('Alert Feed', 'Alert feed'), ('Alert Map', 'Alert map'),
-                           ('Historical Search', 'History'), ('Notification Delivery', 'Delivery')):
+        for label, tab in (('Locations', 'Locations'), ('Active Alerts', 'Active Alerts'),
+                           ('Alert Feed', 'Alert Feed'), ('Map', 'Map'),
+                           ('Historical Search', 'History'), ('Notifications', 'Notifications')):
             view.add_command(label, lambda tab=tab: self.show_tab(tab))
         view.separator()
         view.add_command('Connection Status…', self.connection_status)
@@ -83,8 +81,8 @@ class ApplicationMenu:
         data.add_command('Storage & Retention…', self.storage)
 
         tools = self.groups['Tools']
-        tools.add_command('Demo Mode', lambda: self.show_tab('Demo'))
-        tools.add_command('Notification Delivery Log', lambda: self.show_tab('Delivery'))
+        tools.add_command('Demo Mode', owner.open_demo)
+        tools.add_command('Notification Delivery Log', lambda: self.show_tab('Notifications'))
         tools.add_command('Diagnostics…', self.diagnostics)
         tools.add_command('Open Log Folder', self.open_logs)
         settings = self.groups['Settings']
@@ -227,17 +225,12 @@ class ApplicationMenu:
             except Exception:
                 pass
 
-    def event_types(self):
-        self.owner.filters.canvas.yview_moveto(0)
-        self.owner.filters.canvas.focus_set()
-        self.owner.status.set(f'Choose event types in the left panel for {self.owner.profile.name}. Changes save automatically.')
-
     def map_action(self, zoom):
-        self.show_tab('Alert map')
+        self.show_tab('Map')
         self.owner.map.fit() if zoom is None else self.owner.map.zoom(zoom)
 
     def export_map(self):
-        self.show_tab('Alert map')
+        self.show_tab('Map')
         path = filedialog.asksaveasfilename(parent=self.root, title='Export visible alert map',
             defaultextension='.png', filetypes=[('PNG image', '*.png')], initialfile='stormwatch-map.png')
         if not path:
@@ -286,7 +279,7 @@ class ApplicationMenu:
         Label(window, 'These are manual tests. Demo alerts are labeled SIMULATION.', wraplength=490)
         Button(window, 'Test Alert Sound', self.owner.test_sound)
         Button(window, 'Test Speech', self.owner.test_speech)
-        Button(window, 'Open Desktop Notification Demo', lambda: (self.show_tab('Demo'), window.close()))
+        Button(window, 'Open Desktop Notification Demo', lambda: (self.owner.open_demo(), window.close()))
 
     def general(self):
         window = Window(self.owner.app, 'General settings', width=560, height=360)

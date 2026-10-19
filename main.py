@@ -83,8 +83,6 @@ class StormwatchApp:
         Label(brand, "STORMWATCH", style="Brand.TLabel")
         Label(brand, "Weather intelligence • Your locations, in view", style="Muted.TLabel")
         self.state = Label(header, "●  PAUSED", style="Status.TLabel")
-        Button(header, "Minimize to tray", self.hide_to_tray)
-        Button(header, "Quit", self.close)
         body = self.app.row(padding=0, expand=True, fill="both", spacing=20)
         controls = body.column(padding=12, spacing=6, style="Panel.TFrame")
         Label(controls, "Saved locations", style="Heading.TLabel")
@@ -114,10 +112,7 @@ class StormwatchApp:
         self.refresh_interval_picker = Dropdown(refresh,[f'{seconds} seconds' for seconds in REFRESH_INTERVALS],
             value=f'{self.service.interval} seconds',on_change=self.set_refresh_interval,width=11)
         self.toggle = Button(controls, "Start monitoring", self.toggle_monitoring, style="Primary.TButton")
-        audio = controls.row(padding=0,spacing=4)
-        Button(audio,'Sound events',self.edit_sound_events,width=0)
-        Button(audio,'Spoken alerts',self.edit_speech_events,width=0)
-        self.sound_button = Button(audio, "Test sound", self.test_sound,width=0)
+        self.sound_testing = False
         self.sound_preferences = None
         self.speech_preferences = None
         self.tray_mode = Checkbox(controls, "Close window to tray",
@@ -136,10 +131,10 @@ class StormwatchApp:
         Label(overview_page, 'Selected alert types only · Highest-priority alert shown for each saved location',
               style='Muted.TLabel', wraplength=740)
         self.overview = LocationOverview(overview_page, self.open_alert)
-        active = self.tabs.page("Active alerts")
+        active = self.tabs.page("Active Alerts")
         self.active_count = Label(active, "Current alerts for enabled locations", style="Heading.TLabel")
         self.cards = Cards(active, self.open_alert)
-        feed_page = self.tabs.page("Alert feed")
+        feed_page = self.tabs.page("Alert Feed")
         toolbar = feed_page.row(padding=0)
         self.counter = Label(toolbar, "0 alert changes", style="Muted.TLabel", expand=True)
         Button(toolbar, "Clear feed", self.clear_feed)
@@ -152,23 +147,20 @@ class StormwatchApp:
             ('meta','#9aaec7',10),('body','#e5edf8',11)]
         for tag,color,size in tags:
             self.feed.text.tag_configure(tag, foreground=color, font=(self.font_family, size), spacing1=5, spacing3=6)
-        map_page = self.tabs.page("Alert map")
+        map_page = self.tabs.page("Map")
         tools = map_page.row(padding=0)
-        Label(tools, "Affected areas & saved locations", style="Heading.TLabel", expand=True,wraplength=180)
-        Button(tools, "+", lambda: self.map.zoom(1.5))
-        Button(tools, "−", lambda: self.map.zoom(1 / 1.5))
-        Button(tools, "Fit", lambda: self.map.fit())
+        Label(tools, "Affected areas & saved locations", style="Heading.TLabel", expand=True,wraplength=0)
+        Button(tools, "+", lambda: self.map.zoom(1.5), width=0)
+        Button(tools, "−", lambda: self.map.zoom(1 / 1.5), width=0)
+        Button(tools, "Fit", lambda: self.map.fit(), width=0)
         self.map = AlertMap(map_page, self.open_alert)
         self.radar = RadarPanel(map_page,self.map,connection_tools=tools)
-        map_note = Label(map_page, "NWS polygons and zone outlines; alerts without boundaries remain in Active alerts.\n"
-              "Pin matching: storm polygon, or resolved NWS zones.", style="Muted.TLabel", wraplength=500)
-        map_note.widget.bind('<Configure>',lambda e:map_note.configure(wraplength=max(200,e.width)))
-        delivery_page = self.tabs.page("Delivery")
+        delivery_page = self.tabs.page("Notifications")
         self.delivery_panel = DeliveryPanel(delivery_page, self.history, self.retry_delivery, lambda: self.running)
         history_page = self.tabs.page("History")
         self.history_panel = HistoryPanel(history_page, self)
-        demo_page = self.tabs.page("Demo")
-        self.demo = DemoPanel(demo_page, self)
+        self.demo = None
+        self.demo_window = None
         self.location_wizard = None
         self.tabs.widget.bind("<<NotebookTabChanged>>", lambda _: self.refresh_records())
         self.status = Label(self.app, "Ready • Choose locations and start monitoring.", style="Muted.TLabel", wraplength=1180)
@@ -180,6 +172,18 @@ class StormwatchApp:
             self.commands.set_text_size(text_size)
         self.render_active()
         self.tick()
+    def open_demo(self):
+        if self.demo_window is None:
+            self.demo_window = Window(self.app, 'Stormwatch · Demo Mode', width=1000, height=760,
+                                      min_width=850, min_height=680)
+            self.demo = DemoPanel(self.demo_window, self)
+            # Keep the simulation state and any in-flight preview attached to
+            # live widgets when the popup closes. Final cleanup belongs to Quit.
+            self.demo_window.root.protocol('WM_DELETE_WINDOW', self.demo_window.root.withdraw)
+        self.demo_window.root.deiconify()
+        self.demo_window.root.lift()
+        return self.demo_window
+
     def _style(self):
         style = self.app.style
         style.configure(".", background="#0b1424", foreground="#e5edf8", font=(self.font_family, 10))
@@ -724,7 +728,7 @@ class StormwatchApp:
         self.speech_current_jobs = []
         self.refresh_records()
         if errors:
-            self.status.set('Speech failed · See Delivery for the reason and retry options.')
+            self.status.set('Speech failed · See Notifications for the reason and retry options.')
         self.start_speech()
 
     def speech_failed(self, error):
@@ -757,9 +761,9 @@ class StormwatchApp:
         self.delivery_busy = False
         self.refresh_records()
         if not errors:
-            self.status.set("Notification check complete · See Delivery for channel results.")
+            self.status.set("Notification check complete · See Notifications for channel results.")
         if errors:
-            self.status.set("Notification submission failed · See Delivery for remaining retries. " + errors[0])
+            self.status.set("Notification submission failed · See Notifications for remaining retries. " + errors[0])
 
     def delivery_failed(self, error):
         self.delivery_busy = False
@@ -874,7 +878,8 @@ class StormwatchApp:
         self.prune_speech()
         self.cards.tick()
         self.overview.tick()
-        self.demo.tick()
+        if self.demo is not None:
+            self.demo.tick()
         self.radar.tick()
         self.update_health()
         # An elapsed expiration can be determined locally, even while offline.
@@ -942,20 +947,25 @@ class StormwatchApp:
         self.empty.show()
 
     def test_sound(self):
-        self.sound_button.disable()
+        if self.sound_testing:
+            return
+        self.sound_testing = True
         self.status.set("Testing alert.mp3…")
-        self.app.run_in_thread(self.play_test, on_result=lambda _: self.sound_finished(), on_error=self.sound_failed)
+        try:
+            self.app.run_in_thread(self.play_test, on_result=lambda _: self.sound_finished(), on_error=self.sound_failed)
+        except RuntimeError as error:
+            self.sound_failed(error)
 
     def play_test(self):
         with self.sound_lock:
             self.service.deliver_sound()
 
     def sound_finished(self):
-        self.sound_button.enable()
+        self.sound_testing = False
         self.status.set("Sound test started • Check your audio device.")
 
     def sound_failed(self, error):
-        self.sound_button.enable()
+        self.sound_testing = False
         self.status.set(f"Sound test failed: {error}")
 
     def hide_to_tray(self):
@@ -1030,7 +1040,8 @@ class StormwatchApp:
                 self.delivery_future.result()
             except Exception:
                 pass
-        self.demo.close()
+        if self.demo is not None:
+            self.demo.close()
         self.history_panel.close()
         self.commands.wait()
         if self.metrics is not None:
