@@ -124,6 +124,10 @@ class StormwatchApp:
                                   value=self.history.setting("close_to_tray", False), command=self.set_tray_mode)
         self.login = Checkbox(controls, "Launch at login (Windows)",
                               value=self.history.setting("launch_at_login", False), command=self.set_login)
+        # Retain shared preference variables for the Settings popup without
+        # reserving sidebar rows; the expanding event selector uses this space.
+        self.tray_mode.hide()
+        self.login.hide()
         content = body.column(padding=0, expand=True, fill="both", spacing=8)
         self.health = Label(content, "NO LIVE DATA • Start monitoring", style="Health.TLabel", wraplength=780)
         self.tabs = Tabs(content)

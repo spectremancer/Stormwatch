@@ -87,10 +87,6 @@ class ApplicationMenu:
         tools.add_command('Open Log Folder', self.open_logs)
         settings = self.groups['Settings']
         settings.add_command('General…', self.general)
-        settings.widget.add_checkbutton(label='Start at Login (Windows)', variable=owner.login.variable,
-                                        command=lambda: owner.set_login(owner.login.get()))
-        settings.widget.add_checkbutton(label='Close to Tray', variable=owner.tray_mode.variable,
-                                        command=lambda: owner.set_tray_mode(owner.tray_mode.get()))
         settings.add_command('Appearance…', self.appearance)
         settings.add_command('Time & Units…', self.time_units)
         help_menu = self.groups['Help']
@@ -132,8 +128,6 @@ class ApplicationMenu:
                     command=lambda name=p.name: owner.choose_profile(name))
             self.profile_ids = signature
         self.groups['Data'].widget.entryconfigure('Import NWS Alert Data…', state='disabled' if self.import_busy else 'normal')
-        self.groups['Settings'].widget.entryconfigure('Start at Login (Windows)',
-                                                       state='normal' if sys.platform == 'win32' else 'disabled')
         self.groups['File'].widget.entryconfigure('Export Alert History…',
             state='disabled' if owner.history_panel.exporting else 'normal')
         self.groups['Data'].widget.entryconfigure('Export Matching History CSV…',
@@ -295,7 +289,7 @@ class ApplicationMenu:
     def general(self):
         window = Window(self.owner.app, 'General settings', width=560, height=360)
         Label(window, 'Application behavior', style='Heading.TLabel')
-        # Share the existing variables so menus, sidebar, and dialog stay in sync.
+        # Share the application preference variables across settings dialogs.
         for label, control, command in (('Close window to tray', self.owner.tray_mode, self.owner.set_tray_mode),
                                         ('Launch at login (Windows)', self.owner.login, self.owner.set_login)):
             check = Checkbox(window, label, value=control.get(), command=command)
@@ -305,6 +299,7 @@ class ApplicationMenu:
             # The callback must read the shared variable, not the unused local one.
             check.widget.configure(command=lambda control=control, command=command: command(control.get()))
         Button(window, 'Close', window.close)
+        return window
 
     def appearance(self):
         window = Window(self.owner.app, 'Appearance', width=530, height=330)

@@ -84,15 +84,29 @@ class ApplicationMenuTests(unittest.TestCase):
         self.commands.sync()
         self.assertEqual(self.commands.locations_menu.widget.entrycget(1,'label'),'Office')
 
-    def test_tray_setting_menu_and_sidebar_share_variable_and_persistence(self):
-        self.commands.groups['Settings'].widget.invoke('Close to Tray')
+    def test_tray_and_login_are_only_in_general_popup_and_save_preferences(self):
+        self.assertFalse(self.ui.tray_mode.widget.winfo_ismapped())
+        self.assertFalse(self.ui.login.widget.winfo_ismapped())
+        settings = self.commands.groups['Settings'].widget
+        labels = [settings.entrycget(i,'label') for i in range(settings.index('end')+1)]
+        self.assertEqual(labels,['General…','Appearance…','Time & Units…'])
+        window = self.commands.general()
+        self.root.update()
+        tray = next(child for child in window._children
+                    if child.widget.winfo_class() == 'TCheckbutton'
+                    and child.widget.cget('text') == 'Close window to tray')
+        tray.widget.invoke()
         self.assertTrue(self.ui.tray_mode.get())
         self.assertTrue(self.ui.history.setting('close_to_tray'))
-        self.ui.tray_mode.set(False)
-        self.ui.set_tray_mode(False)
+        window.close()
+        window = self.commands.general()
+        tray = next(child for child in window._children
+                    if child.widget.winfo_class() == 'TCheckbutton'
+                    and child.widget.cget('text') == 'Close window to tray')
+        self.assertTrue(tray.widget.instate(['selected']))
+        tray.widget.invoke()
         self.assertFalse(self.ui.history.setting('close_to_tray'))
-        self.assertEqual(str(self.commands.groups['Settings'].widget.entrycget('Close to Tray','variable')),
-                         str(self.ui.tray_mode.variable))
+        window.close()
 
     def test_export_uses_existing_history_filters_and_shortcut_focuses_search(self):
         self.commands.search_history()

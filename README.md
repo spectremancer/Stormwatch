@@ -471,7 +471,9 @@ Data, Tools, Settings, and Help**. Existing sidebar controls remain available.
   Imported records are labeled **Local NWS GeoJSON** and never enter live views
   or trigger notifications. Invalid issue times abort the entire import.
 - **Tools** opens simulations, delivery results, diagnostics, and the log folder.
-- **Settings** shares tray/login settings with the sidebar and offers saved
+- **Settings → General…** contains close-to-tray and Windows launch-at-login
+  preferences. These controls are omitted from the sidebar and separate menu
+  entries so the weather event selector has more vertical space. Settings also offers saved
   control text sizes of 10, 12, or 14 points. Dedicated card/map styles retain
   their sizes. Time & Units explains existing local-time, UTC-radar, and
   original NWS-unit behavior; it does not change official alert wording.
