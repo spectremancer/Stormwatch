@@ -343,6 +343,10 @@ versions cannot be resurrected by a stale active response. Expiration cleanup
 continues while paused or offline and does not wait for another API refresh.
 Stored history and notification receipts are retained.
 
+**Map** uses bundled Natural Earth world land outlines, including all
+continents and Antarctica, and initially shows a global view. Fit focuses on
+current alerts and saved pins, or the world when none are available. The world
+basemap does not expand NWS alert coverage beyond its supported US areas.
 **Map** supports drag-to-pan, wheel/button zoom, fit-to-content, saved-point
 markers, and clicking an alert outline for details. Public-domain Natural Earth
 outlines are bundled for offline geographic context. NWS storm polygons are
@@ -531,15 +535,20 @@ main tabs, and map controls directly.
   supported weather alerts, deduplicate versions, and run atomically in a worker.
   Imported records are labeled **Local NWS GeoJSON** and never enter live views
   or trigger notifications. Invalid issue times abort the entire import.
-- **Tools** opens the Demo Mode popup, notification results, diagnostics, and the log folder.
+- **Tools** opens the Demo Mode popup, diagnostics, and the log folder.
+  Notification delivery results are available in the Notifications tab.
   Header tray/quit and sidebar sound buttons are omitted; use File and Alerts.
   The map footer notes are omitted and its title stays on one line, leaving more
   vertical space for the map and the sidebar event selector.
-- **Settings → General…** contains close-to-tray and Windows launch-at-login
+- **Settings → General** contains close-to-tray and Windows launch-at-login
   preferences. These controls are omitted from the sidebar and separate menu
   entries so the weather event selector has more vertical space. Settings also offers saved
-  control text sizes of 10, 12, or 14 points. Dedicated card/map styles retain
-  their sizes. Time & Units explains existing local-time, UTC-radar, and
+  control text sizes of 10, 12, or 14 points through **Settings → Appearance**.
+  Font size and skin are dropdowns; Navy, Graphite, Forest, and Plum skins apply
+  immediately and persist across restarts, along with the font size. Native
+  window title-bar colors remain controlled by the operating system. General
+  closes with its window title-bar control. Dedicated card/map styles retain
+  their sizes, and editable fields retain black text on white backgrounds. Time & Units explains existing local-time, UTC-radar, and
   original NWS-unit behavior; it does not change official alert wording.
 - **Help** provides a getting-started guide, NWS safety information, shortcuts,
   the GitHub issue page, and application/source credits.

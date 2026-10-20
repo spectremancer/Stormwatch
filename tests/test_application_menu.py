@@ -90,6 +90,65 @@ class ApplicationMenuTests(unittest.TestCase):
             self.ui.test_sound()
         self.assertFalse(self.ui.sound_testing)
 
+    def test_appearance_dropdowns_apply_to_content_and_persist_after_restart(self):
+        from tkinter import font
+        from appearance import SKINS
+        window = self.commands.appearance()
+        self.root.update()
+        self.assertEqual(tuple(self.commands.theme_picker.values),tuple(SKINS))
+        self.commands.font_picker.set('14 pt')
+        self.commands.font_picker.widget.event_generate('<<ComboboxSelected>>')
+        self.commands.theme_picker.set('Forest')
+        self.commands.theme_picker.widget.event_generate('<<ComboboxSelected>>')
+        self.root.update()
+        self.assertEqual(font.nametofont('TkDefaultFont',root=self.root).actual('size'),14)
+        self.assertEqual(str(self.ui.feed.text.cget('background')),SKINS['Forest']['surface'])
+        self.commands.show_tab('Map')
+        self.root.update()
+        land = self.ui.map.canvas.find_withtag('land')
+        self.assertTrue(land)
+        self.assertEqual(self.ui.map.canvas.itemcget(land[0],'fill'),SKINS['Forest']['land'])
+        self.assertEqual(str(self.ui.app.style.lookup('TEntry','foreground')),'#000000')
+        path = self.ui.history.path
+        self.ui.close()
+        self.ui.cleanup_thread.join(timeout=5)
+        self.ui = StormwatchApp(self.service,AlertHistory(path))
+        self.root, self.commands = self.ui.app.root, self.ui.commands
+        self.root.update()
+        self.assertEqual(self.ui.appearance.name,'Forest')
+        self.assertEqual(font.nametofont('TkDefaultFont',root=self.root).actual('size'),14)
+        self.assertEqual(str(self.ui.feed.text.cget('background')),SKINS['Forest']['surface'])
+        popup = self.commands.info('Theme check','New popups use the saved skin.')
+        self.root.update()
+        area = next(child for child in popup._children if hasattr(child,'text'))
+        self.assertEqual(str(area.text.cget('background')),SKINS['Forest']['surface'])
+        self.ui.appearance.set('Plum')
+        self.ui.appearance.set('Navy')
+        self.root.update()
+        self.assertEqual(str(area.text.cget('background')),SKINS['Navy']['surface'])
+
+    def test_general_has_only_window_close_and_delivery_menu_shortcut_is_removed(self):
+        window = self.commands.general()
+        self.root.update()
+        self.assertFalse(any(child.widget.winfo_class() == 'TButton' for child in window._children))
+        tools = self.commands.groups['Tools'].widget
+        self.assertNotIn('Notification Delivery Log',[tools.entrycget(i,'label') for i in range(tools.index('end')+1)])
+
+    def test_world_basemap_includes_all_continents_and_global_extents(self):
+        from dashboard_views import rings
+        points = [point for feature in self.ui.map.land for polygon in rings(feature['geometry'])
+                  for ring in polygon for point in ring]
+        self.assertLess(min(p[0] for p in points),-179)
+        self.assertGreater(max(p[0] for p in points),179)
+        self.assertLess(min(p[1] for p in points),-80)
+        self.assertGreater(max(p[1] for p in points),80)
+        for west,east,south,north in ((120,150,-40,-10),(10,40,-30,0),(90,120,5,40)):
+            self.assertTrue(any(west<p[0]<east and south<p[1]<north for p in points))
+        self.commands.show_tab('Map')
+        self.root.update()
+        self.ui.map.fit()
+        self.assertEqual(self.ui.map.center,(0,0))
+
     def test_interval_and_monitoring_commands_share_existing_state(self):
         self.commands.interval_menu.widget.invoke('90 seconds')
         self.assertEqual(self.service.interval,90)
@@ -139,7 +198,7 @@ class ApplicationMenuTests(unittest.TestCase):
         self.assertFalse(self.ui.login.widget.winfo_ismapped())
         settings = self.commands.groups['Settings'].widget
         labels = [settings.entrycget(i,'label') for i in range(settings.index('end')+1)]
-        self.assertEqual(labels,['General…','Appearance…','Time & Units…'])
+        self.assertEqual(labels,['General','Appearance','Time & Units…'])
         window = self.commands.general()
         self.root.update()
         tray = next(child for child in window._children

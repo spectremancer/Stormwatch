@@ -214,14 +214,15 @@ class AlertMap(Widget):
         self.on_point = on_point
         self.canvas = tk.Canvas(parent.widget, background="#101c30", highlightthickness=0, height=400)
         self._attach(parent, self.canvas, expand=True, fill="both")
+        self.canvas._stormwatch_map = self
         self.open_alert = open_alert
         self.rows, self.profiles = [], []
         self._render_signature = None
         self._draw_timer = None
         self._dirty = True
         self.place_labels = []
-        self.center = (-98.0, 39.0)
-        self.scale = 8.0
+        self.center = (0.0, 0.0)
+        self.scale = 1.5
         self.drag = None
         self.canvas.bind("<Configure>", lambda e: self.request_draw())
         self.canvas.bind("<Map>", lambda e: self.request_draw())
@@ -235,7 +236,7 @@ class AlertMap(Widget):
         self.items = {}
         self.radar_photo = self.radar_view = None
         self.on_view_changed = None
-        with Path(__file__).with_name("data").joinpath("north_america.geojson").open() as source:
+        with Path(__file__).with_name("data").joinpath("world_land.geojson").open() as source:
             self.land = json.load(source)["features"]
 
     def render(self, rows, profiles):
@@ -300,7 +301,8 @@ class AlertMap(Widget):
             self.scale = min(max(1, self.canvas.winfo_width() - 100) / max(2, max(xs) - min(xs)),
                              max(1, self.canvas.winfo_height() - 100) / max(2, max(ys) - min(ys)))
         else:
-            self.center, self.scale = (-98, 39), 8
+            self.center = (0, 0)
+            self.scale = max(1, min((self.canvas.winfo_width()-32)/360, (self.canvas.winfo_height()-100)/180))
         self.request_draw()
 
     def start_drag(self, event):
@@ -326,6 +328,8 @@ class AlertMap(Widget):
 
     def draw(self):
         c = self.canvas
+        from appearance import SKINS
+        palette = getattr(self.app, "palette", SKINS["Navy"])
         c.delete("all")
         self.items = {}
         w, h = c.winfo_width(), c.winfo_height()
@@ -336,17 +340,21 @@ class AlertMap(Widget):
             for polygon in rings(feature["geometry"]):
                 coords = [value for lon, lat, *_ in polygon[0] for value in self.project(lon, lat)]
                 if len(coords) >= 6:
-                    c.create_polygon(coords, fill="#192c40", outline="#456079", width=1, tags='land')
+                    c.create_polygon(coords, fill=palette["land"], outline=palette["shore"], width=1, tags='land')
         self.paint_radar()
         for i in range(int(w / self.scale / step) + 2):
             lon = (math.floor(left / step) + i) * step
+            if not -180 <= lon <= 180:
+                continue
             x, _ = self.project(lon, 0)
-            c.create_line(x, 0, x, h, fill="#243a56")
+            c.create_line(x, 0, x, h, fill=palette["button"])
             c.create_text(x+4, h-12, text=f"{lon:g}°", fill=MUTED, anchor="w")
         for i in range(int(h / self.scale / step) + 2):
             lat = (math.floor(bottom / step) + i) * step
+            if not -90 <= lat <= 90:
+                continue
             _, y = self.project(0, lat)
-            c.create_line(0, y, w, y, fill="#243a56")
+            c.create_line(0, y, w, y, fill=palette["button"])
             c.create_text(5, y-8, text=f"{lat:g}°", fill=MUTED, anchor="w")
         missing = 0
         for row in self.rows:
@@ -374,7 +382,7 @@ class AlertMap(Widget):
                 x, y = self.project(p.longitude, p.latitude)
                 c.create_oval(x-5, y-5, x+5, y+5, fill="#7ce3bf", outline=TEXT)
                 c.create_text(x+9, y, text=p.name, fill=TEXT, anchor="w")
-        c.create_rectangle(0, 0, w, 48, fill="#101c30", outline="")
+        c.create_rectangle(0, 0, w, 48, fill=palette["surface"], outline="")
         c.create_text(14, 12, text="Confirm your location · Green: approximate pin · Gray: nearby places" if self.on_point else "SIMULATION · Sample boundaries · No real weather threat" if any(row["alert"].get("simulated") for row in self.rows) else "NWS boundaries · Orange: warning / Blue: watch · Green: saved location", fill=TEXT, anchor="w")
         c.create_text(14, 32, text="Drag to pan · Scroll to zoom · Click the map to move the pin" if self.on_point else f"Drag to pan · Scroll or use +/− to zoom · Click an outline for details · {missing} alerts have no polygon", fill=MUTED, anchor="w")
         if self.on_view_changed:

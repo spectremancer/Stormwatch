@@ -1,11 +1,15 @@
 # Offline map outlines
 
-`north_america.geojson` contains the United States, Canada, Mexico, Cuba, and
-Bahamas geometries from Natural Earth's public-domain 1:110m country dataset.
-Used for geographic context only, not precise boundaries or navigation.
+`world_land.geojson` contains Natural Earth's public-domain 1:110m land
+polygons for the whole world, including all continents and Antarctica.
+It is bundled for offline geographic context, not precise boundaries/navigation.
 
-Source: https://github.com/nvkelso/natural-earth-vector/blob/master/geojson/ne_110m_admin_0_countries.geojson
+Source: https://github.com/nvkelso/natural-earth-vector/blob/master/geojson/ne_110m_land.geojson
+SHA-256: `9e0729ee253ca7d7a5c4ae9395fb1902264c5377c52e224d13dd85010e2835d9`
 Terms: https://www.naturalearthdata.com/about/terms-of-use/
+
+`north_america.geojson` is retained as a legacy asset but is no longer used by
+the map. The global dataset is also used by location selection and Demo Mode.
 
 Alert geometry is supplied separately by the National Weather Service at runtime.
 

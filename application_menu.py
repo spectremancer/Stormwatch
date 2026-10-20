@@ -9,7 +9,8 @@ import threading
 import webbrowser
 from tkinter import filedialog
 
-from TkFlow import Button, Checkbox, Label, Menu, TextArea, Window
+from TkFlow import Button, Checkbox, Dropdown, Label, Menu, TextArea, Window
+from appearance import SKINS
 from application_paths import state_directory
 
 
@@ -60,12 +61,11 @@ class ApplicationMenu:
 
         tools = self.groups['Tools']
         tools.add_command('Demo Mode', owner.open_demo)
-        tools.add_command('Notification Delivery Log', lambda: self.show_tab('Notifications'))
         tools.add_command('Diagnostics…', self.diagnostics)
         tools.add_command('Open Log Folder', self.open_logs)
         settings = self.groups['Settings']
-        settings.add_command('General…', self.general)
-        settings.add_command('Appearance…', self.appearance)
+        settings.add_command('General', self.general)
+        settings.add_command('Appearance', self.appearance)
         settings.add_command('Time & Units…', self.time_units)
         help_menu = self.groups['Help']
         help_menu.add_command('Getting Started', self.getting_started, accelerator='F1')
@@ -261,23 +261,34 @@ class ApplicationMenu:
                 check.disable()
             # The callback must read the shared variable, not the unused local one.
             check.widget.configure(command=lambda control=control, command=command: command(control.get()))
-        Button(window, 'Close', window.close)
         return window
 
     def appearance(self):
+        from tkinter import font
         window = Window(self.owner.app, 'Appearance', width=530, height=330)
         Label(window, 'Text size', style='Heading.TLabel')
         Label(window, 'Applies to application controls. Alert cards and map labels keep their dedicated styles.', wraplength=460)
-        for size in (10, 12, 14):
-            Button(window, f'{size} point text', lambda size=size: self.set_text_size(size))
+        size = font.nametofont('TkDefaultFont',root=self.root).actual('size')
+        self.font_picker = Dropdown(window,[f'{n} pt' for n in (10,12,14)],
+            value=f'{size} pt' if size in (10,12,14) else '10 pt',
+            on_change=lambda value:self.set_text_size(int(value.split()[0])))
+        Label(window, 'Window theme', style='Heading.TLabel')
+        self.theme_picker = Dropdown(window,list(SKINS),value=self.owner.appearance.name,
+                                      on_change=self.owner.appearance.set)
+        Label(window, 'Changes apply immediately and are saved for your next session.',style='Muted.TLabel',wraplength=460)
+        return window
 
-    def set_text_size(self, size):
+    def set_text_size(self, size, save=True):
         from tkinter import font
-        self.owner.history.save_setting('control_text_size', size)
+        if type(size) is not int or size not in (10,12,14):
+            raise ValueError('Choose a supported control text size.')
+        if save:
+            self.owner.history.save_setting('control_text_size', size)
         for name in ('TkDefaultFont', 'TkTextFont', 'TkMenuFont'):
             font.nametofont(name, root=self.root).configure(size=size)
         self.owner.app.style.configure('.', font=(self.owner.font_family, size))
-        self.owner.status.set(f'Control text size set to {size} points.')
+        if save:
+            self.owner.status.set(f'Control text size set to {size} points.')
 
     def time_units(self):
         self.info('Time & units', 'Alert times and spoken expiration times use this computer’s local timezone. '
@@ -308,7 +319,7 @@ class ApplicationMenu:
             f'Pending speech event groups: {len(owner.speech_pending)}\n'
             f'Speech in progress: {owner.speech_busy}\n\n'
             f'{owner.health.get()}\nLast NWS error: {owner.last_error or "None"}\n\n'
-            f'Radar: {owner.radar.status.get()}\n\nUse Notification Delivery Log for channel-specific failures and retry outcomes.')
+            f'Radar: {owner.radar.status.get()}\n\nUse the Notifications tab for channel-specific failures and retry outcomes.')
 
     def open_logs(self):
         # Use the actual logger destination when available, including packaged builds.

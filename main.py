@@ -30,6 +30,7 @@ from notification_explanations import decisions, explanation_text
 from speech import SpeechService, SpeechCancelled, announcement, batch_announcement, issued_after
 from metrics import Metrics
 from application_menu import ApplicationMenu
+from appearance import Appearance
 from event_catalog import WEATHER_EVENTS, DEFAULT_EVENTS, CRITICAL_EVENTS, EVENT_COLORS, event_category
 
 CRITICAL = CRITICAL_EVENTS
@@ -76,6 +77,7 @@ class StormwatchApp:
         self.hidden = False
         self.font_family = tkfont.nametofont("TkDefaultFont").actual("family")
         self._style()
+        self.appearance = Appearance(self.app, self.history)
         self.metrics = None
         self.menu = Menu(self.app)
         header = self.app.row(padding=0)
@@ -174,9 +176,10 @@ class StormwatchApp:
         self.app.root.protocol("WM_DELETE_WINDOW", self.window_closed)
         self.commands = ApplicationMenu(self)
         text_size = self.history.setting('control_text_size', 10)
-        if type(text_size) is int and text_size in (10, 12, 14) and text_size != 10:
-            self.commands.set_text_size(text_size)
+        if type(text_size) is int and text_size in (10, 12, 14):
+            self.commands.set_text_size(text_size, save=False)
         self.render_active()
+        self.appearance.apply(self.appearance.name)
         self.tick()
     def open_demo(self):
         if self.demo_window is None:
