@@ -303,3 +303,4 @@ class NextFeatureGuiTests(unittest.TestCase):
             configure_identity(root)
         windows.shell32.SetCurrentProcessExplicitAppUserModelID.assert_called_once_with('Stormwatch.WeatherIntelligence')
         self.assertEqual(Path(bitmap.call_args.kwargs['default']).name,'icon.ico')
+        bitmap.assert_any_call(str(Path(__file__).resolve().parents[1]/'icon.ico'))

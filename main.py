@@ -866,7 +866,7 @@ class StormwatchApp:
         self.history_panel.refresh()
 
     def update_health(self):
-        self.state.configure(foreground="#7ce3bf" if self.running else "#ff6b6b")
+        self.state.configure(foreground=self.app.palette["good"] if self.running else self.app.palette["bad"])
         now = datetime.now(timezone.utc)
         if self.last_success is None:
             message = "NO LIVE DATA • Waiting for a successful refresh"
@@ -883,7 +883,7 @@ class StormwatchApp:
             message += " • Cancellation coverage incomplete"
         self.health.set(message)
         self.overview.set_health('NO LIVE DATA' if self.last_success is None else 'STALE · Last known alerts' if stale else 'LIVE')
-        self.health.configure(foreground="#ffbc87" if stale or self.coverage_warning else "#7ce3bf")
+        self.health.configure(foreground=self.app.palette["warning"] if stale or self.coverage_warning else self.app.palette["good"])
 
     def tick(self):
         if self.app._closed:

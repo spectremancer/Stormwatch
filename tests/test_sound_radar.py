@@ -13,7 +13,7 @@ from alert_history import AlertHistory
 from locations import LocationProfile
 from main import StormwatchApp
 from TkFlow import Form
-from radar import METADATA_URL, RadarError, _read, connection_error
+from radar import METADATA_URL, RadarError, RadarService, _read, connection_error
 from test_dashboard import alert
 
 
@@ -61,6 +61,24 @@ class RadarConnectionTests(unittest.TestCase):
         response.headers = {'Location':location} if location else {}
         response.iter_content.return_value = [body]
         return response
+
+    def test_connection_snapshot_tracks_observed_http_success_and_failure(self):
+        service = RadarService()
+        with patch('radar._read',return_value=b'{}'):
+            self.assertEqual(service._fetch(METADATA_URL,100),b'{}')
+        info = service.connection_info()['api.rainviewer.com']
+        self.assertEqual(info['requests'],1)
+        self.assertEqual(info['successes'],1)
+        self.assertEqual(info['active'],0)
+        self.assertIn('HTTP 200',info['result'])
+        self.assertIsNotNone(info['last_success'])
+        with patch('radar._read',side_effect=RadarError('api.rainviewer.com returned HTTP 503.')),self.assertRaises(RadarError):
+            service._fetch(METADATA_URL,100)
+        info = service.connection_info()['api.rainviewer.com']
+        self.assertEqual(info['requests'],2)
+        self.assertEqual(info['failures'],1)
+        self.assertEqual(info['active'],0)
+        self.assertIn('HTTP 503',info['result'])
 
     def test_proxy_rejection_is_actionable_without_exposing_raw_proxy_details(self):
         raw = requests.exceptions.ProxyError('proxy-user:secret@internal-proxy CONNECT 403 Forbidden')
@@ -187,6 +205,22 @@ class SoundRadarGuiTests(unittest.TestCase):
         self.assertIn('CONNECT HTTP 403',text.get())
         self.assertIn('tilecache.rainviewer.com',text.get())
         self.assertNotIn('Proxy refused',self.ui.feed.get())
+
+    def test_details_show_session_observations_without_starting_requests(self):
+        panel = self.ui.radar
+        with patch('radar._read',return_value=b'{}'):
+            panel.service._fetch(METADATA_URL,100)
+        with patch('radar.requests.get') as request:
+            window = panel.show_details()
+            self.ui.app.root.update()
+            text = next(child for child in window._children if hasattr(child,'text')).get()
+            request.assert_not_called()
+        self.assertIn('HTTP 200',text)
+        self.assertIn('Last successful refresh:',text)
+        self.assertIn('Loaded frames: 0',text)
+        self.assertIn('Radar: Off',text)
+        self.assertNotIn('rebuild',text.lower())
+        self.assertNotIn('Required HTTPS hosts',text)
 
     def test_map_connection_details_share_zoom_toolbar_and_removed_legend_frees_space(self):
         self.ui.tabs.widget.select(self.ui.map.parent.widget)

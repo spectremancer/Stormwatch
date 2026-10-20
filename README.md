@@ -56,6 +56,9 @@ alerts; successful software submission does not prove you heard the alert.
 The project-root `icon.ico` supplies the title-bar, Windows taskbar, child-window,
 and tray icons. Windows uses a Stormwatch-specific taskbar application identity.
 Asset paths are resolved relative to the application, including frozen builds.
+The current Windows title bar receives an explicit ICO assignment, in addition
+to the default for new windows. Root and popup icons are reapplied on mapping
+so native window creation does not leave Tk’s default icon in place.
 To build the Windows executable **on Windows**:
 
 ```sh
@@ -344,8 +347,10 @@ continues while paused or offline and does not wait for another API refresh.
 Stored history and notification receipts are retained.
 
 **Map** uses bundled Natural Earth world land outlines, including all
-continents and Antarctica, and initially shows a global view. Fit focuses on
-current alerts and saved pins, or the world when none are available. The world
+continents and Antarctica, and initially frames North America. Fit focuses on
+current alerts and saved pins when alerts are displayed; with no displayed
+alerts it returns to North America, even if saved pins exist. Pan and zoom out
+to explore the rest of the world. Location setup still centers on its pin. The world
 basemap does not expand NWS alert coverage beyond its supported US areas.
 **Map** supports drag-to-pan, wheel/button zoom, fit-to-content, saved-point
 markers, and clicking an alert outline for details. Public-domain Natural Earth
@@ -386,7 +391,16 @@ elapsed expirations, and unconfirmed disappearance remain distinct. Summaries
 are saved per version and historical change; older records without a summary
 remain readable and are not assigned an invented comparison.
 
-#The Map page uses compact zoom controls and a shared radar checkbox/playback
+#**Connection details** on Map shows the current radar state, refresh attempt /
+success / failure times, measured load duration, next refresh, frame count,
+viewport match, actual last error, and per-host HTTP fetch successes/failures
+and in-flight counts. **Refresh details** updates this snapshot without making
+network requests. Unobserved hosts/timestamps are explicitly marked as such;
+HTTP success does not imply valid imagery or that a frame matches the current
+viewport. Metadata and tile hosts are tracked separately. Turning radar off
+cancels its scheduled refresh timers.
+
+The Map page uses compact zoom controls and a shared radar checkbox/playback
 row. Its status expands only to fit the current text, leaving the remaining
 height to the map without omitting radar controls or status information.
 
@@ -544,8 +558,10 @@ main tabs, and map controls directly.
   preferences. These controls are omitted from the sidebar and separate menu
   entries so the weather event selector has more vertical space. Settings also offers saved
   control text sizes of 10, 12, or 14 points through **Settings → Appearance**.
-  Font size and skin are dropdowns; Navy, Graphite, Forest, and Plum skins apply
-  immediately and persist across restarts, along with the font size. Native
+  Font size and skin are dropdowns; Classic, Navy, Graphite, Forest, and Plum skins apply
+  immediately and persist across restarts, along with the font size. Classic is
+  a light gray skin with dark, high-contrast text and is the default for unset
+  or invalid preferences. Previously selected valid skins remain selected. Native
   window title-bar colors remain controlled by the operating system. General
   closes with its window title-bar control. Dedicated card/map styles retain
   their sizes, and editable fields retain black text on white backgrounds. Time & Units explains existing local-time, UTC-radar, and

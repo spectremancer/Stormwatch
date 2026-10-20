@@ -109,7 +109,7 @@ class Cards(Widget):
                       style="Muted.TLabel", padding=20).pack(anchor="w")
         for row in rows:
             alert = row["alert"]
-            color = event_color(alert['event'])
+            color = event_color(alert['event'],getattr(self.app,'palette',None))
             card = tk.Frame(self.body, background=PANEL, padx=16, pady=12, highlightthickness=1,
                             highlightbackground="#243a56")
             card.pack(fill="x", pady=(0, 10))
@@ -167,7 +167,7 @@ class LocationOverview(Cards):
         if freshness != self.freshness:
             self.freshness = freshness
             for label in self.health_labels:
-                label.configure(text=freshness, fg='#7ce3bf' if freshness == 'LIVE' else '#ffbc87')
+                label.configure(text=freshness, fg=getattr(self.app,'palette',{}).get('good' if freshness == 'LIVE' else 'warning',MUTED))
 
     def draw_page(self):
         start = self.page_index * 20
@@ -186,7 +186,7 @@ class LocationOverview(Cards):
         for row in rows:
             profile, matches = row['profile'], row['matches']
             top = max((r['alert'] for r in matches), key=threat_priority, default=None)
-            color = event_color(top['event']) if top else MUTED
+            color = event_color(top['event'],getattr(self.app,'palette',None)) if top else MUTED
             card = tk.Frame(self.body, bg=PANEL, padx=16, pady=12, highlightthickness=1, highlightbackground='#243a56')
             card.pack(fill='x', pady=(0,10))
             for text, fg, bold in ((profile.name,TEXT,True),(profile.summary(),MUTED,False),
@@ -202,7 +202,7 @@ class LocationOverview(Cards):
                 ttk.Button(card,text='View highest-priority alert',command=lambda a=top:self.open_alert(a)).pack(anchor='w')
             monitored = profile.enabled and bool(profile.events)
             label = tk.Label(card,text=self.freshness if monitored else 'Monitoring disabled',bg=PANEL,
-                             fg=('#7ce3bf' if self.freshness == 'LIVE' else '#ffbc87') if monitored else MUTED,anchor='w')
+                             fg=getattr(self.app,'palette',{}).get('good' if self.freshness == 'LIVE' else 'warning',MUTED) if monitored else getattr(self.app,'palette',{}).get('muted',MUTED),anchor='w')
             label.pack(fill='x',pady=(6,0))
             if monitored:
                 self.health_labels.append(label)
@@ -221,8 +221,9 @@ class AlertMap(Widget):
         self._draw_timer = None
         self._dirty = True
         self.place_labels = []
-        self.center = (0.0, 0.0)
-        self.scale = 1.5
+        self.center = (-90.0, 45.0)
+        self.scale = 4.0
+        self._initial_region = True
         self.drag = None
         self.canvas.bind("<Configure>", lambda e: self.request_draw())
         self.canvas.bind("<Map>", lambda e: self.request_draw())
@@ -287,11 +288,14 @@ class AlertMap(Widget):
             self.canvas.tag_lower('land')
 
     def zoom(self, factor):
+        self._initial_region = False
         self.scale = max(1, min(2000, self.scale * factor))
         self.request_draw()
 
     def fit(self):
-        points = [(p.longitude, p.latitude) for p in self.profiles if p.enabled and p.latitude is not None]
+        self._initial_region = False
+        points = [(p.longitude, p.latitude) for p in self.profiles
+                  if p.enabled and p.latitude is not None and (self.rows or self.on_point is not None)]
         for row in self.rows:
             for polygon in rings(row["alert"].get("geometry")):
                 points.extend(tuple(p[:2]) for p in polygon[0])
@@ -301,15 +305,21 @@ class AlertMap(Widget):
             self.scale = min(max(1, self.canvas.winfo_width() - 100) / max(2, max(xs) - min(xs)),
                              max(1, self.canvas.winfo_height() - 100) / max(2, max(ys) - min(ys)))
         else:
-            self.center = (0, 0)
-            self.scale = max(1, min((self.canvas.winfo_width()-32)/360, (self.canvas.winfo_height()-100)/180))
+            self._north_america()
         self.request_draw()
+
+    def _north_america(self):
+        # Alaska, Canada, Greenland, the contiguous US, Mexico and Central America.
+        self.center = (-90, 45)
+        self.scale = max(0.1, min(max(1,self.canvas.winfo_width()-80)/160,
+                                  max(1,self.canvas.winfo_height()-100)/80))
 
     def start_drag(self, event):
         self.drag = (event.x, event.y, self.center)
 
     def move(self, event):
         if self.drag:
+            self._initial_region = False
             x, y, center = self.drag
             self.center = (center[0] - (event.x - x) / self.scale, center[1] + (event.y - y) / self.scale)
             self.request_draw()
@@ -327,6 +337,9 @@ class AlertMap(Widget):
         self.drag = None
 
     def draw(self):
+        if self._initial_region:
+            self._initial_region = False
+            self._north_america()
         c = self.canvas
         from appearance import SKINS
         palette = getattr(self.app, "palette", SKINS["Navy"])
@@ -348,14 +361,14 @@ class AlertMap(Widget):
                 continue
             x, _ = self.project(lon, 0)
             c.create_line(x, 0, x, h, fill=palette["button"])
-            c.create_text(x+4, h-12, text=f"{lon:g}°", fill=MUTED, anchor="w")
+            c.create_text(x+4, h-12, text=f"{lon:g}°", fill=palette["muted"], anchor="w")
         for i in range(int(h / self.scale / step) + 2):
             lat = (math.floor(bottom / step) + i) * step
             if not -90 <= lat <= 90:
                 continue
             _, y = self.project(0, lat)
             c.create_line(0, y, w, y, fill=palette["button"])
-            c.create_text(5, y-8, text=f"{lat:g}°", fill=MUTED, anchor="w")
+            c.create_text(5, y-8, text=f"{lat:g}°", fill=palette["muted"], anchor="w")
         missing = 0
         for row in self.rows:
             alert = row["alert"]
@@ -368,22 +381,22 @@ class AlertMap(Widget):
                     coords = [value for lon, lat, *_ in ring for value in self.project(lon, lat)]
                     if len(coords) >= 6:
                         item = c.create_polygon(coords, fill="", width=2,
-                                                outline=event_color(alert['event']))
+                                                outline=event_color(alert['event'],getattr(self.app,'palette',None)))
                         self.items[item] = alert
         labels = [self.project(p.longitude, p.latitude) for p in self.profiles if p.latitude is not None]
         for place in self.place_labels:
             x, y = self.project(place.longitude, place.latitude)
             if 10 < x < w - 100 and 60 < y < h - 25 and all(abs(x-px) > 90 or abs(y-py) > 26 for px, py in labels):
-                c.create_oval(x-2, y-2, x+2, y+2, fill="#9aaec7", outline="")
-                c.create_text(x+5, y, text=place.city, fill="#9aaec7", anchor="w")
+                c.create_oval(x-2, y-2, x+2, y+2, fill=palette["muted"], outline="")
+                c.create_text(x+5, y, text=place.city, fill=palette["muted"], anchor="w")
                 labels.append((x,y))
         for p in self.profiles:
             if p.enabled and p.latitude is not None:
                 x, y = self.project(p.longitude, p.latitude)
-                c.create_oval(x-5, y-5, x+5, y+5, fill="#7ce3bf", outline=TEXT)
-                c.create_text(x+9, y, text=p.name, fill=TEXT, anchor="w")
+                c.create_oval(x-5, y-5, x+5, y+5, fill=palette["good"], outline=palette["text"])
+                c.create_text(x+9, y, text=p.name, fill=palette["text"], anchor="w")
         c.create_rectangle(0, 0, w, 48, fill=palette["surface"], outline="")
-        c.create_text(14, 12, text="Confirm your location · Green: approximate pin · Gray: nearby places" if self.on_point else "SIMULATION · Sample boundaries · No real weather threat" if any(row["alert"].get("simulated") for row in self.rows) else "NWS boundaries · Orange: warning / Blue: watch · Green: saved location", fill=TEXT, anchor="w")
-        c.create_text(14, 32, text="Drag to pan · Scroll to zoom · Click the map to move the pin" if self.on_point else f"Drag to pan · Scroll or use +/− to zoom · Click an outline for details · {missing} alerts have no polygon", fill=MUTED, anchor="w")
+        c.create_text(14, 12, text="Confirm your location · Green: approximate pin · Gray: nearby places" if self.on_point else "SIMULATION · Sample boundaries · No real weather threat" if any(row["alert"].get("simulated") for row in self.rows) else "NWS boundaries · Orange: warning / Blue: watch · Green: saved location", fill=palette["text"], anchor="w")
+        c.create_text(14, 32, text="Drag to pan · Scroll to zoom · Click the map to move the pin" if self.on_point else f"Drag to pan · Scroll or use +/− to zoom · Click an outline for details · {missing} alerts have no polygon", fill=palette["muted"], anchor="w")
         if self.on_view_changed:
             self.on_view_changed()

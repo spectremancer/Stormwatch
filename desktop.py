@@ -16,14 +16,31 @@ def configure_identity(root):
     with Image.open(path) as source:
         images = [ImageTk.PhotoImage(source.convert('RGBA').resize((size,size)), master=root)
                   for size in (16,32,48,64)]
-    root.iconphoto(True, *images)
-    # Keep Tk image objects alive; default applies to child windows too.
+    # Keep the images on the root; popup windows share its Tcl interpreter.
     root._stormwatch_icons = images
+    root._stormwatch_icon_path = path
+    _apply_window_icon(root, root, default=True)
+    if not getattr(root, '_stormwatch_icon_binding', None):
+        def mapped(event):
+            if isinstance(event.widget, (tk.Tk, tk.Toplevel)):
+                _apply_window_icon(root, event.widget)
+        # Windows creates/recreates native title-bar wrappers on mapping. Apply
+        # the current icon explicitly then, including for newly opened popups.
+        root._stormwatch_icon_binding = root.bind_all('<Map>', mapped, add='+')
+
+
+def _apply_window_icon(root, window, default=False):
+    import tkinter as tk
+    if not root._stormwatch_icons:
+        return
+    window.iconphoto(default, *root._stormwatch_icons)
     if sys.platform == 'win32':
         try:
-            root.iconbitmap(default=str(path))
+            window.iconbitmap(str(root._stormwatch_icon_path))
+            if default:
+                window.iconbitmap(default=str(root._stormwatch_icon_path))
         except tk.TclError:
-            pass  # iconphoto still supplies the small and large window icons.
+            pass  # iconphoto still supplies both small and large window icons.
 
 
 def set_login(enabled):

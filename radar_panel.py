@@ -1,8 +1,9 @@
 """Opt-in radar controls. Tk stays on the main thread; requests stay in workers."""
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+import time
 
 from TkFlow import Button, Checkbox, Label, TextArea, Window
-from radar import RadarService, error_description
+from radar import METADATA_URL, TILE_HOST, RadarService, error_description
 
 
 class RadarPanel:
@@ -15,7 +16,8 @@ class RadarPanel:
         self.busy = self.playing = self.closed = False
         self.error = ''
         self.diagnostic = ''
-        self.last_attempt = None
+        self.last_attempt = self.last_success = self.last_failure = None
+        self.last_duration = self.request_started = self.next_refresh_at = None
         self.play_timer = self.view_timer = self.refresh_timer = None
         tools = parent.row(padding=0, spacing=4)
         self.enabled = Checkbox(tools,'Show recent radar',value=False,command=lambda _: self.toggle())
@@ -48,6 +50,12 @@ class RadarPanel:
         self.generation += 1
         self.stop_playback()
         if not self.enabled.get():
+            for name in ('view_timer','refresh_timer'):
+                timer = getattr(self,name)
+                if timer is not None:
+                    self.app.root.after_cancel(timer)
+                    setattr(self,name,None)
+            self.next_refresh_at = None
             self.frames, self.loaded_view = [], None
             self.map.set_radar()
             self.status.set('Radar off · Alert monitoring works independently.')
@@ -74,6 +82,7 @@ class RadarPanel:
         self.stop_playback()
         self.busy = True
         self.last_attempt = datetime.now(timezone.utc)
+        self.request_started = time.monotonic()
         generation = self.generation
         self.status.set('Loading recent past radar… Alert boundaries remain available.')
         self.update_buttons()
@@ -86,6 +95,7 @@ class RadarPanel:
 
     def loaded(self, generation, result):
         self.busy = False
+        self.last_duration = time.monotonic()-self.request_started if self.request_started is not None else None
         if self.closed:
             return
         view, frames = result
@@ -93,6 +103,7 @@ class RadarPanel:
             self.view_changed()
             self.update_buttons()
             return
+        self.last_success = datetime.now(timezone.utc)
         self.error = ''
         self.diagnostic = ''
         self.loaded_view, self.frames = view, frames
@@ -113,6 +124,8 @@ class RadarPanel:
             self.view_changed()
             self.update_buttons()
             return
+        self.last_failure = datetime.now(timezone.utc)
+        self.last_duration = time.monotonic()-self.request_started if self.request_started is not None else None
         self.error = 'Radar refresh failed'
         self.diagnostic = error_description(error)
         self.status.set('RADAR UNAVAILABLE · '+self.diagnostic)
@@ -122,6 +135,7 @@ class RadarPanel:
     def arm_refresh(self):
         if self.refresh_timer is not None:
             self.app.root.after_cancel(self.refresh_timer)
+        self.next_refresh_at = datetime.now(timezone.utc)+timedelta(minutes=5)
         self.refresh_timer = self.app.after(300000,self.auto_refresh)
 
     def auto_refresh(self):
@@ -151,25 +165,43 @@ class RadarPanel:
         self.status.set(f'RainViewer · {state} · Frame generated {generated:%Y-%m-%d %H:%M UTC} · {age} min ago · Frame {self.index+1}/{len(self.frames)}'+
                         (f' · {self.error}: {self.diagnostic}' if self.error else '')+' · Radar coverage can be incomplete.')
 
+    def connection_report(self):
+        def stamp(value):
+            return value.strftime('%Y-%m-%d %H:%M:%S UTC') if value else 'Not recorded'
+        state = 'Off' if not self.enabled.get() else 'Loading' if self.busy else 'Refresh failed' if self.error else 'Loaded' if self.frames else 'Waiting'
+        lines = [f'Radar: {state}',f'Last attempt: {stamp(self.last_attempt)}',
+                 f'Last successful refresh: {stamp(self.last_success)}',f'Last failed refresh: {stamp(self.last_failure)}',
+                 f'Last load duration: {self.last_duration:.2f} seconds' if self.last_duration is not None else 'Last load duration: Not measured',
+                 f'Next refresh: {stamp(self.next_refresh_at) if self.enabled.get() else "Not scheduled (radar off)"}',
+                 f'Loaded frames: {len(self.frames)}',f'Frames match current map view: {self.loaded_view == self.map.viewport()}',
+                 f'Last refresh error: {self.diagnostic or "None recorded"}',f'Metadata endpoint: {METADATA_URL}',
+                 f'Tile origin: {TILE_HOST}']
+        if self.frames:
+            lines.append('Newest loaded frame: '+stamp(datetime.fromtimestamp(self.frames[-1][0],timezone.utc)))
+        snapshot = self.service.connection_info() if hasattr(self.service,'connection_info') else {}
+        if not isinstance(snapshot,dict):
+            snapshot = {}
+        if snapshot:
+            for host,values in sorted(snapshot.items()):
+                lines.extend(['',host,f'  Fetches: {values["requests"]} · Completed: {values["successes"]} · Failed: {values["failures"]} · In flight: {values["active"]}',
+                              f'  Last result: {values["result"]}',f'  Last attempt: {stamp(values["last_attempt"])}',
+                              f'  Last HTTP success: {stamp(values["last_success"])}'])
+        for host in ('api.rainviewer.com','tilecache.rainviewer.com'):
+            if host not in snapshot:
+                lines.append(host+': No fetches observed in this session.')
+        if not snapshot:
+            lines.append('HTTP request results: No requests observed in this session.')
+        return '\n'.join(lines)
+
     def show_details(self):
-        window = Window(self.app,'Radar connection details',width=690,height=480)
-        Label(window,'RainViewer radar connection',style='Heading.TLabel')
+        window = Window(self.app,'Radar connection details',width=760,height=570)
+        Label(window,'Radar connection details',style='Heading.TLabel')
         text = TextArea(window,readonly=True,expand=True,fill='both',bg='#101c30',fg='#e5edf8',padx=12,pady=12)
-        text.set(f"Last attempt: {self.last_attempt:%Y-%m-%d %H:%M:%S UTC}\n" if self.last_attempt else 'No connection attempt yet.\n')
-        text.append(f"\n{self.diagnostic or ('Recent radar imagery loaded successfully.' if self.frames else 'Enable Show recent radar on the map to connect.')}\n\n"
-                    'Required HTTPS hosts:\napi.rainviewer.com (frame metadata)\ntilecache.rainviewer.com (radar images)\n\n'
-                    'A proxy CONNECT 403 means the proxy blocked the destination before contacting RainViewer. '
-                    'It does not establish that RainViewer is down. In a managed cloud environment, allow both '
-                    'hosts in environment settings, save, and publish the configuration. On Windows, check your '
-                    'firewall/proxy rules. TLS failures require a correct clock and trusted certificates.\n\n'
-                    'If using a Windows executable, rebuild from the current source with main.spec; an older EXE '
-                    'does not include these changes.\n\n'
-                    'Alert monitoring continues independently. Retained imagery always keeps its original timestamp.')
-        text.append('\n\nRadar imagery: RainViewer · https://www.rainviewer.com\n'
-                    'RainViewer timestamps describe frame generation. A composite frame may contain radar '
-                    'readings from different observation times. Tile options: 256 pixels, zoom at most 7, '
-                    'Universal Blue (2), smoothing on and separate snow colors on (1_1).')
-        Button(window,'Close',window.close)
+        text.set(self.connection_report())
+        buttons = window.row(padding=0)
+        Button(buttons,'Refresh details',lambda:text.set(self.connection_report()))
+        Button(buttons,'Close',window.close)
+        return window
 
     def step(self, delta):
         self.stop_playback()

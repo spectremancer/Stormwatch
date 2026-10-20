@@ -147,7 +147,39 @@ class ApplicationMenuTests(unittest.TestCase):
         self.commands.show_tab('Map')
         self.root.update()
         self.ui.map.fit()
-        self.assertEqual(self.ui.map.center,(0,0))
+        self.assertEqual(self.ui.map.center,(-90,45))
+
+    def test_classic_default_is_readable_and_empty_fit_ignores_saved_pins(self):
+        from appearance import SKINS
+        self.assertEqual(self.ui.appearance.name,'Classic')
+        self.assertEqual(str(self.ui.feed.text.cget('background')),SKINS['Classic']['surface'])
+        self.assertEqual(str(self.ui.feed.text.cget('foreground')),SKINS['Classic']['text'])
+        def luminance(value):
+            channels = [int(value[i:i+2],16)/255 for i in (1,3,5)]
+            linear = [x/12.92 if x<=.04045 else ((x+.055)/1.055)**2.4 for x in channels]
+            return sum(a*b for a,b in zip(linear,(.2126,.7152,.0722)))
+        background = luminance(SKINS['Classic']['bg'])
+        for role in ('text','muted','good','bad','warning','watch','advisory','statement','outlook','other'):
+            foreground = luminance(SKINS['Classic'][role])
+            ratio = (max(background,foreground)+.05)/(min(background,foreground)+.05)
+            self.assertGreaterEqual(ratio,4.5,role)
+        self.commands.show_tab('Map')
+        self.root.update()
+        west,south,east,north = self.ui.map.viewport().bounds()
+        self.assertLessEqual(west,-170)
+        self.assertGreaterEqual(east,-10)
+        self.assertLessEqual(south,5)
+        self.assertGreaterEqual(north,85)
+        self.ui.profile.latitude,self.ui.profile.longitude = 41.88,-87.63
+        self.ui.map.render([],[self.ui.profile])
+        self.ui.map.fit()
+        self.assertEqual(self.ui.map.center,(-90,45))
+
+    def test_new_popup_explicitly_receives_title_bar_icon_after_mapping(self):
+        with patch('desktop._apply_window_icon') as apply:
+            window = self.commands.general()
+            self.root.update()
+        self.assertTrue(any(call.args[1] is window.root for call in apply.call_args_list))
 
     def test_interval_and_monitoring_commands_share_existing_state(self):
         self.commands.interval_menu.widget.invoke('90 seconds')
@@ -156,11 +188,11 @@ class ApplicationMenuTests(unittest.TestCase):
         self.assertEqual(self.ui.refresh_interval_picker.get(),'90 seconds')
         menu = self.commands.groups['Monitoring'].widget
         self.assertEqual(menu.entrycget('Pause Monitoring','state'),'disabled')
-        self.assertEqual(str(self.ui.state.widget.cget('foreground')),'#ff6b6b')
+        self.assertEqual(str(self.ui.state.widget.cget('foreground')),self.ui.app.palette['bad'])
         with patch.object(self.ui,'poll') as poll:
             menu.invoke('Start Monitoring')
             self.assertTrue(self.ui.running)
-            self.assertEqual(str(self.ui.state.widget.cget('foreground')),'#7ce3bf')
+            self.assertEqual(str(self.ui.state.widget.cget('foreground')),self.ui.app.palette['good'])
             self.assertEqual(menu.entrycget('Start Monitoring','state'),'disabled')
             self.assertEqual(menu.entrycget('Refresh Interval','state'),'disabled')
             timer = self.ui.app.after(60000, lambda: None)
@@ -174,7 +206,7 @@ class ApplicationMenuTests(unittest.TestCase):
             self.assertEqual(menu.entrycget('Refresh Now','state'),'disabled')
             menu.invoke('Pause Monitoring')
             self.assertFalse(self.ui.running)
-            self.assertEqual(str(self.ui.state.widget.cget('foreground')),'#ff6b6b')
+            self.assertEqual(str(self.ui.state.widget.cget('foreground')),self.ui.app.palette['bad'])
             self.ui.busy = False
 
     def test_sidebar_picker_updates_and_switches_selected_profile(self):

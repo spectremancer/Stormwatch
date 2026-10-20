@@ -150,6 +150,38 @@ class RadarService:
     def __init__(self):
         self.stop = threading.Event()
         self.cache = OrderedDict()
+        self.connection_lock = threading.Lock()
+        self.connections = {}
+
+    def connection_info(self):
+        with self.connection_lock:
+            return {host:dict(values) for host,values in self.connections.items()}
+
+    def _fetch(self, url, limit):
+        host = urlparse(url).hostname
+        with self.connection_lock:
+            item = self.connections.setdefault(host,dict(requests=0,successes=0,failures=0,active=0,
+                last_attempt=None,last_success=None,result='Not attempted'))
+            item['requests'] += 1
+            item['active'] += 1
+            item['last_attempt'] = datetime.now(timezone.utc)
+        try:
+            data = _read(url,limit,self.stop)
+        except Exception as error:
+            with self.connection_lock:
+                item['failures'] += 1
+                item['result'] = error_description(error)
+            raise
+        else:
+            with self.connection_lock:
+                item['successes'] += 1
+                item['last_success'] = datetime.now(timezone.utc)
+                # _read returns bytes only after a complete HTTP 200 response.
+                item['result'] = 'HTTP 200 · response received'
+            return data
+        finally:
+            with self.connection_lock:
+                item['active'] -= 1
 
     def close(self):
         self.stop.set()
@@ -158,7 +190,7 @@ class RadarService:
         host, path, zoom, x, y = key
         # Weather Maps API: {host}{path}/{size}/{z}/{x}/{y}/{color}/{smooth}_{snow}.png
         # 2 = Universal Blue; 1_1 = smoothing on, separate snow colors on.
-        data = _read(f'{host}{path}/256/{zoom}/{x}/{y}/2/1_1.png', 1024*1024, self.stop)
+        data = self._fetch(f'{host}{path}/256/{zoom}/{x}/{y}/2/1_1.png', 1024*1024)
         try:
             with Image.open(BytesIO(data)) as image:
                 if image.size != (256,256):
@@ -172,7 +204,7 @@ class RadarService:
         if not (0 < view.width <= 1800 and 0 < view.height <= 1200 and view.scale > 0):
             raise ValueError('Resize the map to at most 1800 × 1200 pixels to load radar.')
         try:
-            metadata = json.loads(_read(METADATA_URL, 256*1024, self.stop))
+            metadata = json.loads(self._fetch(METADATA_URL, 256*1024))
         except (json.JSONDecodeError,UnicodeDecodeError):
             raise RadarError('The radar metadata was not valid JSON. A firewall or provider error page may have replaced the response.') from None
         frames = parse_frames(metadata)

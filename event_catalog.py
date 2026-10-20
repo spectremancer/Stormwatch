@@ -147,5 +147,6 @@ def is_weather_event(event):
     return is_supported_event(event) and event not in NON_WEATHER_EVENTS
 
 
-def event_color(event):
-    return EVENT_COLORS.get(event_category(event),'#9aaec7')
+def event_color(event, palette=None):
+    category = event_category(event)
+    return (palette or {}).get(category, EVENT_COLORS.get(category,'#9aaec7'))
