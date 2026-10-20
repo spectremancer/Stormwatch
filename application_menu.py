@@ -22,6 +22,7 @@ class ApplicationMenu:
         self.import_future = None
         self.import_busy = False
         self.import_cancel = threading.Event()
+        self.documentation = None
         self.groups = {}
         for name in ('File', 'Monitoring', 'Alerts', 'Data', 'Tools', 'Settings', 'Help'):
             self.groups[name] = self.bar.dropdown(name)
@@ -68,7 +69,7 @@ class ApplicationMenu:
         settings.add_command('Appearance', self.appearance)
         settings.add_command('Time & Units…', self.time_units)
         help_menu = self.groups['Help']
-        help_menu.add_command('Getting Started', self.getting_started, accelerator='F1')
+        help_menu.add_command('Documentation', self.open_documentation, accelerator='F1')
         help_menu.add_command('NWS Alert Definitions', lambda: webbrowser.open('https://www.weather.gov/safety/'))
         help_menu.add_command('Keyboard Shortcuts', self.shortcuts)
         help_menu.add_command('Report an Issue…', lambda: webbrowser.open('https://github.com/spectremancer/Stormwatch/issues/new'))
@@ -334,18 +335,18 @@ class ApplicationMenu:
         except OSError as error:
             self.info('Log folder', f'{path}\n\nCould not open the system file manager: {error}')
 
+    def open_documentation(self, topic=None):
+        from help_guide import HelpGuide
+        if self.documentation is None or self.documentation.window._closed:
+            self.documentation = HelpGuide(self.owner)
+        self.documentation.show(topic)
+        return self.documentation
+
     def getting_started(self):
-        self.info('Getting started', '1. Add saved locations and choose the event types to follow. All enabled locations monitor together.\n\n'
-            '2. Configure sound, speech, and desktop preferences under Alerts. Choose the NWS refresh interval before starting.\n\n'
-            '3. Start monitoring. Check the connection banner for stale data. Active alerts and the map remove expired and cancelled events.\n\n'
-            '4. Speech covers new events after monitoring starts, grouped by event type and affected locations.\n\n'
-            '5. Use History to search or export previous alerts, Data → Metrics for totals, and Tools → Demo Mode for simulations.\n\n'
-            'Minimize to Tray keeps monitoring running. Exit stops the application.')
+        return self.open_documentation('Quick start')
 
     def shortcuts(self):
-        self.info('Keyboard shortcuts', 'F5 — Refresh NWS alerts while monitoring\nCtrl+F — Search alert history\n'
-            'Ctrl+E — Export history using the applied filters\nCtrl+Q — Exit Stormwatch\nF1 — Getting started\nAlt+F4 — Close window (uses your Close to Tray setting)\n\n'
-            'On the map: drag to pan, scroll to zoom, double-click to zoom in.')
+        return self.open_documentation('Keyboard & menus')
 
     def about(self):
         self.info('About Stormwatch', 'STORMWATCH\nWeather intelligence for your locations\n\n'

@@ -566,11 +566,11 @@ main tabs, and map controls directly.
   closes with its window title-bar control. Dedicated card/map styles retain
   their sizes, and editable fields retain black text on white backgrounds. Time & Units explains existing local-time, UTC-radar, and
   original NWS-unit behavior; it does not change official alert wording.
-- **Help** provides a getting-started guide, NWS safety information, shortcuts,
+- **Help** provides comprehensive Documentation, NWS safety information, shortcuts,
   the GitHub issue page, and application/source credits.
 
 Shortcuts: **F5** refreshes NWS data while monitoring, **Ctrl+F** focuses history
-search, **Ctrl+E** exports matching history, **F1** opens Getting Started, and
+search, **Ctrl+E** exports matching history, **F1** opens Documentation at Quick start, and
 **Ctrl+Q** exits. **Alt+F4** uses the configured close-to-tray behavior. Opening
 menus or informational dialogs does not start monitoring or connect radar.
 
@@ -817,3 +817,17 @@ behavior still needs verification on Windows.
 A separate current-conditions/forecast panel, severity-specific rules, and
 individual-event desktop notification rule editors are not part of this release.
 NWS Short Term Forecast alert products are supported when supplied by the alerts API.
+
+### Built-in documentation
+
+Help → Documentation opens an offline, non-modal guide with scrollable topic tabs
+on the left and a large read-only FAQ pane on the right. It covers setup, profiles,
+event selection, monitoring, all delivery channels, map/radar, history downloads,
+imports/exports, Metrics, Demo Mode, settings, backup, platform setup, and troubleshooting.
+Search matches all entered words across topic names, questions, and answers, with
+highlights and per-topic counts. Clear restores all topics. Ctrl+F focuses guide
+search, Escape hides the guide, and Copy topic copies the displayed answers.
+Closing and reopening preserves the guide's current topic and search; F1 returns
+to Quick start. Help → Keyboard Shortcuts opens its corresponding guide topic.
+Content is bundled in `data/user_guide.md`, including packaged builds; opening or
+searching help does not request weather data or deliver notifications.
