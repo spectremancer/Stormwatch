@@ -84,34 +84,38 @@ class StormwatchApp:
         Label(brand, "Weather intelligence • Your locations, in view", style="Muted.TLabel")
         self.state = Label(header, "●  PAUSED", style="Status.TLabel")
         body = self.app.row(padding=0, expand=True, fill="both", spacing=20)
-        controls = body.column(padding=12, spacing=6, style="Panel.TFrame")
-        Label(controls, "Saved locations", style="Heading.TLabel")
-        self.profile_picker = Dropdown(controls, [p.name for p in self.profiles],
-                                       on_change=self.choose_profile)
+        controls = body.column(padding=(8, 6), spacing=3, fill="both", style="Panel.TFrame")
+        location_heading = controls.row(padding=0, spacing=6)
+        Label(location_heading, "Saved locations", style="Heading.TLabel")
+        self.profile_picker = Dropdown(location_heading, [p.name for p in self.profiles],
+                                       on_change=self.choose_profile, width=14, expand=True)
         self.location_summary = Label(controls, self.profile.summary(), style="Muted.TLabel", wraplength=290)
         self.rule_summary = Label(controls, self.profile.rules_summary(), style="Muted.TLabel", wraplength=300)
         buttons = controls.row(padding=0)
-        Button(buttons, "Add", self.add_location)
-        Button(buttons, "Edit", self.edit_profile)
-        Button(buttons, "Remove", self.remove_profile)
+        Button(buttons, "Add", self.add_location, style="Sidebar.TButton", width=0)
+        Button(buttons, "Edit", self.edit_profile, style="Sidebar.TButton", width=0)
+        Button(buttons, "Remove", self.remove_profile, style="Sidebar.TButton", width=0)
         Label(controls, "All enabled locations monitor together.", style="Muted.TLabel")
         actions = controls.row(padding=0)
-        Button(actions, "Select all", lambda: self.select_all(True))
-        Button(actions, "Clear", lambda: self.select_all(False))
-        self.filters = Form(controls, "Event types · selected location", expand=True, fill="both", padding=8)
+        Button(actions, "Select all", lambda: self.select_all(True), style="Sidebar.TButton", width=0)
+        Button(actions, "Clear", lambda: self.select_all(False), style="Sidebar.TButton", width=0)
+        self.selection = Label(actions, "", style="Muted.TLabel", expand=True, anchor="e")
+        self.filters = Form(controls, "Event types · selected location", expand=True, fill="both", padding=4)
+        self.filters.body.spacing = 0
+        self.filters.actions.widget.grid_configure(pady=0)
         self.filters.canvas.configure(background="#0b1424")
         self.choices = {}
         for event in list(DEFAULT_EVENTS) + [event for event in WEATHER_EVENTS if event not in DEFAULT_EVENTS]:
             self.add_event(event, event in self.profile.events)
         for event in self.profile.events:
             self.add_event(event, True)
-        self.selection = Label(controls, "", style="Muted.TLabel")
         self.update_selection(save=False)
-        refresh = controls.row(padding=0)
-        Label(refresh,'NWS refresh',style='Muted.TLabel',expand=True)
+        refresh = controls.row(padding=0, spacing=4)
+        Label(refresh,'NWS refresh',style='Muted.TLabel')
         self.refresh_interval_picker = Dropdown(refresh,[f'{seconds} seconds' for seconds in REFRESH_INTERVALS],
-            value=f'{self.service.interval} seconds',on_change=self.set_refresh_interval,width=11)
-        self.toggle = Button(controls, "Start monitoring", self.toggle_monitoring, style="Primary.TButton")
+            value=f'{self.service.interval} seconds',on_change=self.set_refresh_interval,width=10)
+        self.toggle = Button(refresh, "Start monitoring", self.toggle_monitoring,
+                             style="Sidebar.Primary.TButton", width=0, expand=True)
         self.sound_testing = False
         self.sound_preferences = None
         self.speech_preferences = None
@@ -213,6 +217,8 @@ class StormwatchApp:
         style.configure("TButton", padding=(12, 9), background="#243a56")
         style.map("TButton", background=[("active", "#355474")])
         style.configure("Primary.TButton", background="#176caa", font=(self.font_family, 10, "bold"))
+        style.configure("Sidebar.TButton", padding=(8, 4))
+        style.configure("Sidebar.Primary.TButton", padding=(8, 5))
         style.configure("TCheckbutton", padding=3)
         style.map("TCheckbutton", background=[("active", "#243a56")])
 
