@@ -3,6 +3,19 @@
 A TkFlow desktop weather dashboard for saved locations, live National Weather
 Service weather and environmental alerts, and independent sound, desktop, and optional spoken notifications.
 
+## Stormwatch in action
+
+Prioritized alert cards, saved-location profiles, interactive affected-area maps,
+and independent notification channels bring your weather monitoring into one place.
+
+![Stormwatch active-alert dashboard showing warning priorities, affected locations, and expiration countdowns](docs/screenshots/active-alerts.png)
+
+*Actual application screenshots, captured on Linux with the Navy theme. All weather,
+locations, delivery results, and historical records shown are simulated examples—not
+live alerts. Window styling varies by platform. Explore [saved locations](#saved-locations),
+[the map](#active-alerts-lifecycle-and-map), [notification delivery](#notification-delivery-panel),
+and [searchable history](#searchable-history-and-csv-export) below.*
+
 ## Install and run
 
 Use Python 3.12 or 3.13 with Tk support:
@@ -103,6 +116,11 @@ Folder** opens the actual logger destination.
 
 ## Saved locations
 
+![Saved-location overview showing separate Home, Work, and Family threat summaries](docs/screenshots/saved-locations.png)
+
+*See each enabled location's highest-priority alert, matching-event count, and
+notification preferences at a glance. Sample weather is labeled SIMULATION.*
+
 Use **Add** for a three-step guided setup:
 
 1. Search the offline city/ZIP catalog (examples: `Chicago, IL`, `Springfield Illinois`,
@@ -197,6 +215,11 @@ turning a channel off also prevents its queued or failed submissions from retryi
 Cancellations and expired versions remain silent regardless of warning rules.
 
 ### Choose which events play alert.mp3
+
+![Sound settings with only tornado and hurricane warnings and watches selected](docs/screenshots/sound-settings.png)
+
+*Choose sound events independently for each profile while continuing to display
+other monitored weather types.*
 
 Select a location in the sidebar, then choose **Alerts → Sound Settings…**. To play sound
 only for tornado and hurricane events, choose **Tornado + hurricane**, then
@@ -313,6 +336,12 @@ closing the application also stops it. Each native speech command has a 45-secon
 timeout. Completion does not prove someone heard the announcement.
 
 ## Active alerts, lifecycle, and map
+
+![Interactive alert map displaying simulated warning and watch boundaries around three saved-location pins](docs/screenshots/alert-map.png)
+
+*Relate affected areas to Home, Work, and Family with pan, zoom, and Fit controls.
+This example shows fictional polygons with radar switched off; radar playback is
+an optional, separate layer.*
 
 **Active alerts** shows current matched alerts as cards with profile names,
 affected area, severity, issue time, and an expiration countdown. Cards are
@@ -576,6 +605,11 @@ menus or informational dialogs does not start monitoring or connect radar.
 
 ## Data menu and metrics
 
+![Metrics popup comparing distinct historical alert IDs, recorded changes, downloaded changes, and active alerts by event type](docs/screenshots/event-metrics.png)
+
+*Compare historical activity with the monitored active snapshot. These small
+sample totals illustrate the columns rather than actual weather statistics.*
+
 **Data → Metrics** opens a summary of every saved historical event type and the
 types in the current monitored alert snapshot. The table shows distinct
 historical NWS alert IDs, recorded changes, downloaded changes, and active alerts
@@ -596,6 +630,11 @@ runs in the background using a consistent SQLite read snapshot, allowing live
 monitoring to keep writing. No saved history is changed.
 
 ## Searchable history and CSV export
+
+![Searchable alert-history view with event, location, lifecycle, delivery, and date filters plus selected-record details](docs/screenshots/alert-history.png)
+
+*Search recorded changes, inspect what changed, download the latest seven days,
+and export all matching rows to CSV.*
 
 **History** provides a paginated archive of alert versions and lifecycle changes.
 Search across event names, headlines, areas, descriptions, and instructions.
@@ -678,6 +717,12 @@ escaped. Export cancellation writes nothing; failures preserve an existing
 export. Export cannot overwrite the application database.
 
 ## Notification delivery panel
+
+![Notification delivery view showing independent speech, desktop, and sound outcomes and a simulated desktop failure](docs/screenshots/notification-delivery.png)
+
+*Inspect channel-specific results and retry an eligible failed channel without
+replaying successful channels. The displayed delivery failure is fabricated for
+this documentation capture; no devices were used.*
 
 The **Notifications** tab lists sound, desktop, and enabled speech channel records separately, with
 pagination and a **Failed only** filter. Select a row to inspect the location,
@@ -819,6 +864,11 @@ individual-event desktop notification rule editors are not part of this release.
 NWS Short Term Forecast alert products are supported when supplied by the alerts API.
 
 ### Built-in documentation
+
+![Built-in documentation popup with left-side FAQ topics, global search, and detailed spoken-alert how-to answers](docs/screenshots/documentation.png)
+
+*Browse 158 FAQs across 26 topics, search all answers, and copy instructions while
+keeping the application open.*
 
 Help → Documentation opens an offline, non-modal guide with scrollable topic tabs
 on the left and a large read-only FAQ pane on the right. It covers setup, profiles,
