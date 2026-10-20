@@ -382,7 +382,11 @@ elapsed expirations, and unconfirmed disappearance remain distinct. Summaries
 are saved per version and historical change; older records without a summary
 remain readable and are not assigned an invented comparison.
 
-### Radar playback
+#The Map page uses compact zoom controls and a shared radar checkbox/playback
+row. Its status expands only to fit the current text, leaving the remaining
+height to the map without omitting radar controls or status information.
+
+## Radar playback
 
 In **Map**, enable **Show recent radar**. This opt-in overlay uses
 [RainViewer](https://www.rainviewer.com) observed precipitation imagery under
@@ -507,8 +511,9 @@ and History**. Demo Mode is available as a reusable popup from **Tools**, rather
 than a main tab. Closing that popup hides it and preserves its simulation state
 until Stormwatch exits.
 
-The menu bar groups commands under **File, Monitoring, Locations, Alerts, View,
-Data, Tools, Settings, and Help**. Existing sidebar controls remain available.
+The menu bar groups commands under **File, Monitoring, Alerts, Data, Tools,
+Settings, and Help**. Locations and View menus are omitted: use the sidebar,
+main tabs, and map controls directly.
 
 - **File** exports the applied History filters to CSV or captures the visible
   map as PNG, minimizes to the tray, and exits. Keep the map visible and
@@ -517,13 +522,9 @@ Data, Tools, Settings, and Help**. Existing sidebar controls remain available.
 - **Monitoring** starts/pauses monitoring and refreshes immediately. Refresh Now
   requires monitoring and waits until any current request finishes. Interval
   choices share the sidebar setting and can be changed only while paused.
-- **Locations** opens the overview, adds/edits/removes locations, and provides a
-  checked list for selecting the location whose preferences are being edited.
 - **Alerts** opens sound/speech preferences and manual notification tests.
   Select events in the sidebar and edit location rules with the sidebar Edit button. Clear Alert
   Feed clears only the session feed, not saved history.
-- **View** navigates the main tabs, shows connection status, restores the default
-  window/tab/map extent, and provides map zoom, fit, and radar controls.
 - **Data** opens Metrics, recent NWS history downloads, CSV export, local NWS
   GeoJSON import, source information, and a read-only storage/retention summary.
   Imports accept NWS FeatureCollections up to 10 MiB and 5,000 features, retain
@@ -698,6 +699,10 @@ shutdown. It never writes to live profiles, active alerts, notification receipts
 or alert history. Demo data is not restored after restart.
 
 ## Background monitoring and connection health
+
+The top-right status is red while **PAUSED** and green while **MONITORING**.
+This indicates whether monitoring is running; the separate health banner
+continues to distinguish live, stale, and failed connections.
 
 **Minimize to tray** hides the window only after a tray icon becomes available.
 Its menu provides **Open Stormwatch** and **Quit**. Enable **Close window to tray**

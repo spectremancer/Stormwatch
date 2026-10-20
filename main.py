@@ -82,7 +82,7 @@ class StormwatchApp:
         brand = header.column(padding=0, expand=True)
         Label(brand, "STORMWATCH", style="Brand.TLabel")
         Label(brand, "Weather intelligence • Your locations, in view", style="Muted.TLabel")
-        self.state = Label(header, "●  PAUSED", style="Status.TLabel")
+        self.state = Label(header, "●  PAUSED", style="Status.TLabel", foreground="#ff6b6b")
         body = self.app.row(padding=0, expand=True, fill="both", spacing=20)
         controls = body.column(padding=(8, 6), spacing=3, fill="both", style="Panel.TFrame")
         location_heading = controls.row(padding=0, spacing=6)
@@ -152,11 +152,13 @@ class StormwatchApp:
         for tag,color,size in tags:
             self.feed.text.tag_configure(tag, foreground=color, font=(self.font_family, size), spacing1=5, spacing3=6)
         map_page = self.tabs.page("Map")
-        tools = map_page.row(padding=0)
+        map_page.spacing = 4
+        map_page.widget.configure(padding=8)
+        tools = map_page.row(padding=0, spacing=4)
         Label(tools, "Affected areas & saved locations", style="Heading.TLabel", expand=True,wraplength=0)
-        Button(tools, "+", lambda: self.map.zoom(1.5), width=0)
-        Button(tools, "−", lambda: self.map.zoom(1 / 1.5), width=0)
-        Button(tools, "Fit", lambda: self.map.fit(), width=0)
+        Button(tools, "+", lambda: self.map.zoom(1.5), width=0, style="Map.TButton")
+        Button(tools, "−", lambda: self.map.zoom(1 / 1.5), width=0, style="Map.TButton")
+        Button(tools, "Fit", lambda: self.map.fit(), width=0, style="Map.TButton")
         self.map = AlertMap(map_page, self.open_alert)
         self.radar = RadarPanel(map_page,self.map,connection_tools=tools)
         delivery_page = self.tabs.page("Notifications")
@@ -217,6 +219,7 @@ class StormwatchApp:
         style.configure("TButton", padding=(12, 9), background="#243a56")
         style.map("TButton", background=[("active", "#355474")])
         style.configure("Primary.TButton", background="#176caa", font=(self.font_family, 10, "bold"))
+        style.configure("Map.TButton", padding=(6, 3))
         style.configure("Sidebar.TButton", padding=(8, 4))
         style.configure("Sidebar.Primary.TButton", padding=(8, 5))
         style.configure("TCheckbutton", padding=3)
@@ -860,6 +863,7 @@ class StormwatchApp:
         self.history_panel.refresh()
 
     def update_health(self):
+        self.state.configure(foreground="#7ce3bf" if self.running else "#ff6b6b")
         now = datetime.now(timezone.utc)
         if self.last_success is None:
             message = "NO LIVE DATA • Waiting for a successful refresh"

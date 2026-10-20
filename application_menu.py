@@ -22,7 +22,7 @@ class ApplicationMenu:
         self.import_busy = False
         self.import_cancel = threading.Event()
         self.groups = {}
-        for name in ('File', 'Monitoring', 'Locations', 'Alerts', 'View', 'Data', 'Tools', 'Settings', 'Help'):
+        for name in ('File', 'Monitoring', 'Alerts', 'Data', 'Tools', 'Settings', 'Help'):
             self.groups[name] = self.bar.dropdown(name)
         file = self.groups['File']
         file.add_command('Export Alert History…', self.export_history, accelerator='Ctrl+E')
@@ -41,34 +41,12 @@ class ApplicationMenu:
             self.interval_menu.widget.add_radiobutton(label=f'{seconds} seconds', variable=self.interval,
                 value=f'{seconds} seconds', command=lambda n=seconds: owner.set_refresh_interval(f'{n} seconds'))
 
-        locations = self.groups['Locations']
-        locations.add_command('Manage Saved Locations…', lambda: self.show_tab('Locations'))
-        locations.add_command('Add Location…', owner.add_location)
-        locations.add_command('Edit Selected Location…', owner.edit_profile)
-        locations.add_command('Remove Selected Location…', owner.remove_profile)
-        self.locations_menu = locations.dropdown('Select Location')
-
         alerts = self.groups['Alerts']
         alerts.add_command('Sound Settings…', owner.edit_sound_events)
         alerts.add_command('Speech Settings…', owner.edit_speech_events)
         alerts.add_command('Test Notification…', self.test_notification)
         alerts.separator()
         alerts.add_command('Clear Alert Feed', owner.clear_feed)
-
-        view = self.groups['View']
-        for label, tab in (('Locations', 'Locations'), ('Active Alerts', 'Active Alerts'),
-                           ('Alert Feed', 'Alert Feed'), ('Map', 'Map'),
-                           ('Historical Search', 'History'), ('Notifications', 'Notifications')):
-            view.add_command(label, lambda tab=tab: self.show_tab(tab))
-        view.separator()
-        view.add_command('Connection Status…', self.connection_status)
-        view.add_command('Reset Layout', self.reset_layout)
-        map_menu = view.dropdown('Map')
-        map_menu.add_command('Zoom In', lambda: self.map_action(1.5))
-        map_menu.add_command('Zoom Out', lambda: self.map_action(1 / 1.5))
-        map_menu.add_command('Fit Alerts and Locations', lambda: self.map_action(None))
-        map_menu.widget.add_checkbutton(label='Show Recent Radar', variable=owner.radar.enabled.variable,
-                                        command=owner.radar.toggle)
 
         data = self.groups['Data']
         owner.data_menu = data
@@ -102,8 +80,6 @@ class ApplicationMenu:
         for menu in self.groups.values():
             menu.widget.configure(postcommand=self.sync)
         self.interval_menu.widget.configure(postcommand=self.sync)
-        self.locations_menu.widget.configure(postcommand=self.sync)
-        self.profile_ids = None
         self.sync()
 
     @staticmethod
@@ -119,14 +95,6 @@ class ApplicationMenu:
         monitoring.entryconfigure(self.refresh_index, state='normal' if owner.running and not owner.busy else 'disabled')
         monitoring.entryconfigure('Refresh Interval', state='disabled' if owner.running else 'normal')
         self.interval.set(f'{owner.service.interval} seconds')
-        signature = tuple((p.id, p.name) for p in owner.profiles)
-        if signature != self.profile_ids:
-            menu = self.locations_menu.widget
-            menu.delete(0, 'end')
-            for p in owner.profiles:
-                menu.add_radiobutton(label=p.name, variable=owner.profile_picker.variable, value=p.name,
-                    command=lambda name=p.name: owner.choose_profile(name))
-            self.profile_ids = signature
         self.groups['Data'].widget.entryconfigure('Import NWS Alert Data…', state='disabled' if self.import_busy else 'normal')
         self.groups['File'].widget.entryconfigure('Export Alert History…',
             state='disabled' if owner.history_panel.exporting else 'normal')

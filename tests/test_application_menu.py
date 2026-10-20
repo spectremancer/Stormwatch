@@ -34,11 +34,9 @@ class ApplicationMenuTests(unittest.TestCase):
     def test_all_groups_and_navigation_reach_existing_pages(self):
         bar = self.ui.menu.widget
         self.assertEqual([bar.entrycget(i, 'label') for i in range(bar.index('end')+1)],
-                         ['File','Monitoring','Locations','Alerts','View','Data','Tools','Settings','Help'])
-        menu = self.commands.groups['View'].widget
-        for label, page in [('Active Alerts','Active Alerts'),('Map','Map'),
-                            ('Historical Search','History'),('Notifications','Notifications')]:
-            menu.invoke(label)
+                         ['File','Monitoring','Alerts','Data','Tools','Settings','Help'])
+        for page in ('Active Alerts','Map','History','Notifications'):
+            self.commands.show_tab(page)
             self.assertEqual(self.ui.tabs.widget.tab(self.ui.tabs.widget.select(), 'text'), page)
         self.commands.groups['Tools'].widget.invoke('Demo Mode')
         self.assertEqual(self.ui.demo_window.root.state(), 'normal')
@@ -99,9 +97,11 @@ class ApplicationMenuTests(unittest.TestCase):
         self.assertEqual(self.ui.refresh_interval_picker.get(),'90 seconds')
         menu = self.commands.groups['Monitoring'].widget
         self.assertEqual(menu.entrycget('Pause Monitoring','state'),'disabled')
+        self.assertEqual(str(self.ui.state.widget.cget('foreground')),'#ff6b6b')
         with patch.object(self.ui,'poll') as poll:
             menu.invoke('Start Monitoring')
             self.assertTrue(self.ui.running)
+            self.assertEqual(str(self.ui.state.widget.cget('foreground')),'#7ce3bf')
             self.assertEqual(menu.entrycget('Start Monitoring','state'),'disabled')
             self.assertEqual(menu.entrycget('Refresh Interval','state'),'disabled')
             timer = self.ui.app.after(60000, lambda: None)
@@ -115,14 +115,16 @@ class ApplicationMenuTests(unittest.TestCase):
             self.assertEqual(menu.entrycget('Refresh Now','state'),'disabled')
             menu.invoke('Pause Monitoring')
             self.assertFalse(self.ui.running)
+            self.assertEqual(str(self.ui.state.widget.cget('foreground')),'#ff6b6b')
             self.ui.busy = False
 
-    def test_location_menu_rebuilds_and_switches_selected_profile(self):
+    def test_sidebar_picker_updates_and_switches_selected_profile(self):
         profile = LocationProfile(name='Work',events=['Gale Warning'])
         self.ui.history.save_profile(profile)
         self.ui.refresh_profiles()
         self.commands.sync()
-        self.commands.locations_menu.widget.invoke('Work')
+        self.ui.profile_picker.set('Work')
+        self.ui.profile_picker.widget.event_generate('<<ComboboxSelected>>')
         self.assertEqual(self.ui.profile.id,profile.id)
         self.assertEqual(self.ui.profile_picker.get(),'Work')
         self.assertEqual(self.ui.selected_events(),{'Gale Warning'})
@@ -130,7 +132,7 @@ class ApplicationMenuTests(unittest.TestCase):
         self.ui.history.save_profile(profile)
         self.ui.refresh_profiles(profile)
         self.commands.sync()
-        self.assertEqual(self.commands.locations_menu.widget.entrycget(1,'label'),'Office')
+        self.assertIn('Office',self.ui.profile_picker.values)
 
     def test_tray_and_login_are_only_in_general_popup_and_save_preferences(self):
         self.assertFalse(self.ui.tray_mode.widget.winfo_ismapped())

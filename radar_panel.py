@@ -17,17 +17,16 @@ class RadarPanel:
         self.diagnostic = ''
         self.last_attempt = None
         self.play_timer = self.view_timer = self.refresh_timer = None
-        self.enabled = Checkbox(parent,'Show recent radar',value=False,command=lambda _: self.toggle())
-        tools = parent.row(padding=0)
-        self.play_button = Button(tools,'Play',self.toggle_play)
-        self.previous = Button(tools,'Previous frame',lambda: self.step(-1))
-        self.next = Button(tools,'Next frame',lambda: self.step(1))
-        self.refresh_button = Button(tools,'Refresh radar',lambda:self.refresh(force=True))
-        self.details_button = Button(connection_tools or tools,'Connection details',self.show_details)
-        status_holder = parent.column(padding=0)
-        status_holder.widget.configure(height=52)
-        status_holder.widget.grid_propagate(False)
-        self.status = Label(status_holder,'Radar off · Alert monitoring works independently.',style='Muted.TLabel',wraplength=740,expand=True,fill='both',anchor='nw')
+        tools = parent.row(padding=0, spacing=4)
+        self.enabled = Checkbox(tools,'Show recent radar',value=False,command=lambda _: self.toggle())
+        self.play_button = Button(tools,'Play',self.toggle_play,style='Map.TButton',width=0)
+        self.previous = Button(tools,'Previous frame',lambda: self.step(-1),style='Map.TButton',width=0)
+        self.next = Button(tools,'Next frame',lambda: self.step(1),style='Map.TButton',width=0)
+        self.refresh_button = Button(tools,'Refresh radar',lambda:self.refresh(force=True),style='Map.TButton',width=0)
+        self.details_button = Button(connection_tools or tools,'Connection details',self.show_details,style='Map.TButton',width=0)
+        # Let the status use only the lines its current text needs. The map
+        # receives the remaining height, including while radar is switched off.
+        self.status = Label(parent,'Radar off · Alert monitoring works independently.',style='Muted.TLabel',wraplength=740,anchor='nw')
         self.status.widget.bind('<Configure>',lambda e:self.status.configure(wraplength=max(200,e.width)))
         self.map.on_view_changed = self.view_changed
         self.update_buttons()
