@@ -19,6 +19,10 @@ class Window(_Window):
         self.app = parent.app
         self.app._check_thread()
         self.root = tk.Toplevel(parent.root)
+        available_width = max(320,self.root.winfo_screenwidth()-60)
+        available_height = max(300,self.root.winfo_screenheight()-100)
+        width,height = min(width,available_width),min(height,available_height)
+        min_width,min_height = min(min_width,available_width),min(min_height,available_height)
         try:
             self._setup_window(title, height, width, min_height, min_width,
                                resizable, padding, spacing)

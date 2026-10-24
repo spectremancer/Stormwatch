@@ -46,11 +46,25 @@ jobs:
       - name: Windows native application smoke test
         if: runner.os == 'Windows'
         run: python -B scripts/desktop_smoke.py
+      - name: Linux bounded endurance workload
+        if: runner.os == 'Linux' && matrix.python == '3.13'
+        run: xvfb-run -a python -B scripts/soak_monitoring.py --seconds 60 --incoming 1000 --archive 10000 --max-ui-gap-ms 1000 --report stormwatch-soak.json
+      - name: Source acceptance check
+        if: runner.os == 'Windows'
+        run: python -B main.py --self-test source-check.json
       - name: Build Windows executable
         if: runner.os == 'Windows' && matrix.python == '3.13'
         run: |
-          python -m pip install pyinstaller
+          python -m pip install pyinstaller==6.16.0
           python -m PyInstaller --clean --noconfirm main.spec
+      - name: Verify packaged Windows executable
+        if: runner.os == 'Windows' && matrix.python == '3.13'
+        shell: pwsh
+        run: |
+          $process = Start-Process -FilePath dist/main.exe -ArgumentList '--self-test', "$env:RUNNER_TEMP/packaged-check.json" -PassThru
+          if (-not $process.WaitForExit(120000)) { $process.Kill(); throw 'Packaged check timed out' }
+          if ($process.ExitCode -ne 0) { throw 'Packaged check failed' }
+          if ((Get-Content "$env:RUNNER_TEMP/packaged-check.json" | ConvertFrom-Json).status -ne 'passed') { throw 'Packaged check did not report success' }
       - name: Upload Windows build
         if: runner.os == 'Windows' && matrix.python == '3.13'
         uses: actions/upload-artifact@v4

@@ -161,8 +161,7 @@ class HelpGuide:
                 self.area.text.tag_add('match', found, end)
                 start = end
         topic_count = len({answer.topic for answer in self.filtered})
-        self.status.set(f'{len(entries)} answers in this topic · {len(self.filtered)} matching answers '
-                        f'in {topic_count} topics · {len(self.answers)} total')
+        self.status.set(f'{len(entries)} shown · {len(self.filtered)} matches in {topic_count} topics · {len(self.answers)} FAQs')
 
     def copy_topic(self):
         self.window.root.clipboard_clear()

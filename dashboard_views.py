@@ -12,6 +12,8 @@ from TkFlow._layout import _Layout
 from alert_history import instant, expiration_of
 from locations import rings
 from radar import Viewport
+from map_context import MapContext
+from map_geometry import outline_plan
 from event_catalog import event_category, event_color
 
 BG, PANEL, TEXT, MUTED = "#0b1424", "#142238", "#e5edf8", "#9aaec7"
@@ -38,13 +40,51 @@ class Page(_Layout):
 
 class Tabs(Widget):
     def __init__(self, parent):
-        self._attach(parent, ttk.Notebook(parent.widget), expand=True, fill="both")
+        from TkFlow import Dropdown
         self.pages = []
+        self._syncing = False
+        self.switcher = Dropdown(parent,['Views'],on_change=self.choose,expand=False)
+        self.switcher.hide()
+        self._attach(parent, ttk.Notebook(parent.widget), expand=True, fill="both")
+        self.app.style.layout('Compact.TNotebook.Tab',[])
+        self.widget.bind('<Configure>',self.responsive)
+        self.widget.bind('<<NotebookTabChanged>>',self.sync_switcher,add='+')
 
     def page(self, title):
         page = Page(self.app, self.widget, title)
         self.pages.append(page)
+        titles = [self.widget.tab(tab,'text') for tab in self.widget.tabs()]
+        self.switcher.values = tuple(titles)
+        self.switcher.configure(values=titles)
+        self.sync_switcher()
         return page
+
+    def choose(self, title):
+        if self._syncing:
+            return
+        for tab in self.widget.tabs():
+            if self.widget.tab(tab,'text')==title:
+                self.widget.select(tab)
+                break
+
+    def sync_switcher(self, event=None):
+        if self._destroyed:
+            return
+        selected = self.widget.select()
+        if selected:
+            self._syncing = True
+            try:self.switcher.set(self.widget.tab(selected,'text'))
+            finally:self._syncing = False
+
+    def responsive(self, event):
+        if self._destroyed:
+            return
+        font = tkfont.nametofont('TkDefaultFont',root=self.app.root)
+        required = sum(font.measure(self.widget.tab(tab,'text'))+32 for tab in self.widget.tabs())
+        narrow = event.width<required
+        style = 'Compact.TNotebook' if narrow else 'TNotebook'
+        if self.widget.cget('style')!=style:self.widget.configure(style=style)
+        self.switcher.show() if narrow else self.switcher.hide()
 
     def _dispose(self):
         for page in self.pages:
@@ -57,6 +97,9 @@ class Cards(Widget):
     def __init__(self, parent, open_alert):
         self.open_alert = open_alert
         self.rows, self.page_index = [], 0
+        self.compact = False
+        self.show_on_map = None
+        self.selected_id = None
         self._page_signature = None
         frame = ttk.Frame(parent.widget)
         self.canvas = tk.Canvas(frame, background=BG, highlightthickness=0)
@@ -94,7 +137,7 @@ class Cards(Widget):
     def draw_page(self):
         start = self.page_index * 20
         rows = self.rows[start:start + 20]
-        signature = (self.page_index,len(self.rows),tuple((r["id"],r.get("version"),r["alert"],r.get('summary'),tuple(r.get("locations",()))) for r in rows))
+        signature = (self.compact,self.selected_id,self.page_index,len(self.rows),tuple((r["id"],r.get("version"),r["alert"],r.get('summary'),tuple(r.get("locations",()))) for r in rows))
         if signature == self._page_signature:
             return
         self._page_signature = signature
@@ -110,25 +153,38 @@ class Cards(Widget):
         for row in rows:
             alert = row["alert"]
             color = event_color(alert['event'],getattr(self.app,'palette',None))
-            card = tk.Frame(self.body, background=PANEL, padx=16, pady=12, highlightthickness=1,
-                            highlightbackground="#243a56")
+            card = tk.Frame(self.body, background=PANEL, padx=12, pady=5 if self.compact else 12, highlightthickness=2 if row["id"]==self.selected_id else 1,
+                            highlightbackground=getattr(self.app,"palette",{}).get("accent","#176caa") if row["id"]==self.selected_id else "#243a56")
             card.pack(fill="x", pady=(0, 10))
             tk.Label(card, text=("SIMULATION · " if alert.get("simulated") else "") + alert["event"], bg=PANEL, fg=color,
                      font=(tkfont.nametofont("TkDefaultFont").actual("family"), 13, "bold"), anchor="w").pack(fill="x")
             tk.Label(card, text=" · ".join(row.get("locations", [])), bg=PANEL, fg=MUTED,
                      anchor="w").pack(fill="x", pady=(4, 0))
-            tk.Label(card, text=f"{alert['severity']}  ·  Issued {alert.get('sent') or 'unknown'}",
+            tk.Label(card, text=f"{alert['severity']}  ·  Issued {display_time(alert.get('sent'))}",
                      bg=PANEL, fg=MUTED, anchor="w").pack(fill="x", pady=4)
-            area = tk.Label(card, text=alert["area"], wraplength=540, justify="left", bg=PANEL, fg=TEXT, anchor="w")
+            area = tk.Label(card, text=alert["area"][:95] if self.compact else alert["area"], wraplength=540, justify="left", bg=PANEL, fg=TEXT, anchor="w")
             area.pack(fill="x")
             card.bind("<Configure>", lambda e, label=area: label.configure(wraplength=max(180, e.width - 40)))
-            if row.get('summary'):
+            if row.get('summary') and not self.compact:
                 tk.Label(card, text='What changed: '+row['summary'], wraplength=540, justify='left',
                          bg=PANEL, fg=TEXT, anchor='w').pack(fill='x', pady=5)
             label = tk.Label(card, text=countdown(alert), bg=PANEL, fg=color, anchor="w")
             label.pack(fill="x", pady=5)
             self.labels.append((label, alert))
-            ttk.Button(card, text="View alert details", command=lambda a=alert: self.open_alert(a)).pack(anchor="w")
+            actions = ttk.Frame(card,style="Panel.TFrame")
+            actions.pack(anchor='w')
+            ttk.Button(actions, text="View alert details", command=lambda a=alert: self.open_alert(a)).pack(side='left')
+            if self.show_on_map:
+                ttk.Button(actions,text='Show on map',command=lambda a=alert:self.show_on_map(a)).pack(side='left',padx=4)
+
+    def select(self, alert_id):
+        for index,row in enumerate(self.rows):
+            if row['id']==alert_id:
+                self.selected_id = alert_id
+                self.page_index = index//20
+                self.draw_page()
+                self.canvas.yview_moveto((index%20)/max(1,min(20,len(self.rows)-self.page_index*20)))
+                break
 
     def tick(self):
         for label, alert in self.labels:
@@ -145,9 +201,22 @@ def threat_priority(alert):
             -end.timestamp() if end else float('-inf'))
 
 
-def active_sort_key(row):
+def display_time(value):
+    issued = instant(value)
+    return issued.astimezone().strftime('%b %d, %I:%M %p %Z') if issued else 'unknown'
+
+
+def active_sort_key(row, mode='Priority • longest remaining'):
     alert = row['alert']
     end = expiration_of(alert)
+    if mode=='Soonest expiration':
+        return (end.timestamp() if end else float('inf'),row['id'])
+    if mode=='Newest issued':
+        issued = instant(alert.get('sent'))
+        return (-(issued.timestamp() if issued else 0),row['id'])
+    if mode=='Urgency':
+        return ({'Immediate':0,'Expected':1,'Future':2}.get(alert.get('urgency'),3),
+                -{'Extreme':4,'Severe':3,'Moderate':2,'Minor':1}.get(alert.get('severity'),0),row['id'])
     return ({'warning':0,'watch':1}.get(event_category(alert['event']),2),
             -{'Extreme':4,'Severe':3,'Moderate':2,'Minor':1}.get(alert.get('severity'),0),
             -end.timestamp() if end else float('inf'),alert['event'].casefold(),row['id'])
@@ -220,12 +289,17 @@ class AlertMap(Widget):
         self._render_signature = None
         self._draw_timer = None
         self._dirty = True
+        self._projection_size = None
         self.place_labels = []
+        self.context = MapContext(self)
+        self.plan = ()
+        self.overlapping = {}
+        self.allowed_ids = set()
         self.center = (-90.0, 45.0)
         self.scale = 4.0
         self._initial_region = True
         self.drag = None
-        self.canvas.bind("<Configure>", lambda e: self.request_draw())
+        self.canvas.bind("<Configure>", self.resized)
         self.canvas.bind("<Map>", lambda e: self.request_draw())
         self.canvas.bind("<ButtonPress-1>", self.start_drag)
         self.canvas.bind("<B1-Motion>", self.move)
@@ -240,11 +314,13 @@ class AlertMap(Widget):
         with Path(__file__).with_name("data").joinpath("world_land.geojson").open() as source:
             self.land = json.load(source)["features"]
 
-    def render(self, rows, profiles):
+    def render(self, rows, profiles, plan=None):
         signature = (tuple((r["id"],r.get("version"),r["alert"].get("event"),r["alert"].get("simulated"),r["alert"].get("geometry")) for r in rows),
                      tuple((p.id,p.name,p.enabled,p.longitude,p.latitude) for p in profiles),tuple(self.place_labels))
         self.rows, self.profiles = rows, profiles
+        self.allowed_ids = {row["id"] for row in rows}
         if signature != self._render_signature:
+            self.plan = plan if plan is not None else outline_plan(rows)
             self._render_signature = signature
             self._dirty = True
             if self.canvas.winfo_ismapped():
@@ -267,15 +343,24 @@ class AlertMap(Widget):
             self._draw_timer = None
         super()._dispose()
 
+    def resized(self, event):
+        self._projection_size = (event.width,event.height)
+        self.request_draw()
+
     def project(self, lon, lat):
-        return (self.canvas.winfo_width() / 2 + (lon - self.center[0]) * self.scale,
-                self.canvas.winfo_height() / 2 - (lat - self.center[1]) * self.scale)
+        if self._projection_size is None:
+            self._projection_size = (self.canvas.winfo_width(),self.canvas.winfo_height())
+        width,height = self._projection_size
+        return (width/2+(lon-self.center[0])*self.scale,height/2-(lat-self.center[1])*self.scale)
 
     def viewport(self):
         return Viewport(self.canvas.winfo_width(),self.canvas.winfo_height(),*self.center,self.scale)
 
     def set_radar(self, image=None, view=None):
         from PIL import ImageTk
+        if image is not None and view is not None and image.size != (view.width,view.height):
+            from PIL import Image
+            image = image.resize((view.width,view.height),Image.Resampling.NEAREST)
         self.radar_photo = ImageTk.PhotoImage(image,master=self.canvas) if image is not None else None
         self.radar_view = view
         self.paint_radar()
@@ -287,6 +372,32 @@ class AlertMap(Widget):
             self.canvas.tag_lower('radar')
             self.canvas.tag_lower('land')
 
+    def focus(self, alert):
+        points = [tuple(point[:2]) for polygon in rings(alert.get('geometry')) for point in polygon[0]]
+        if not points:
+            self.fit()
+            return
+        xs,ys = zip(*points)
+        self._initial_region = False
+        self.center = ((min(xs)+max(xs))/2,(min(ys)+max(ys))/2)
+        self.scale = min(max(1,self.canvas.winfo_width()-100)/max(.1,max(xs)-min(xs)),
+                         max(1,self.canvas.winfo_height()-100)/max(.1,max(ys)-min(ys)))
+        self.request_draw()
+
+    def layer_settings(self):
+        from TkFlow import Button, Checkbox, Label, Window
+        window = Window(self.app,'Map layers',width=460,height=330)
+        Label(window,'Offline geographic context',style='Heading.TLabel')
+        for name,title in (('states','State boundaries'),('counties','County boundaries (zoom in)'),('cities','Major city labels')):
+            def changed(value,layer=name):
+                self.context.enabled[layer] = value
+                self.request_draw()
+            Checkbox(window,title,value=self.context.enabled[name],command=changed)
+        Label(window,'Orange: warnings · Blue: watches · Yellow: advisories\nGreen: saved locations\n'
+              'Boundaries provide context; read the official alert area and instructions.',wraplength=420)
+        Button(window,'Close',window.close)
+        return window
+
     def zoom(self, factor):
         self._initial_region = False
         self.scale = max(1, min(2000, self.scale * factor))
@@ -296,9 +407,10 @@ class AlertMap(Widget):
         self._initial_region = False
         points = [(p.longitude, p.latitude) for p in self.profiles
                   if p.enabled and p.latitude is not None and (self.rows or self.on_point is not None)]
-        for row in self.rows:
-            for polygon in rings(row["alert"].get("geometry")):
-                points.extend(tuple(p[:2]) for p in polygon[0])
+        for outline in self.plan:
+            if any(alert['id'] in self.allowed_ids for alert in outline.alerts):
+                west,south,east,north=outline.bounds
+                points.extend(((west,south),(east,north)))
         if points:
             xs, ys = zip(*points)
             self.center = ((min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2)
@@ -332,7 +444,12 @@ class AlertMap(Widget):
                 self.on_point(lat, lon)
             for item in reversed(self.canvas.find_overlapping(event.x-2, event.y-2, event.x+2, event.y+2)):
                 if item in self.items:
-                    self.open_alert(self.items[item])
+                    alerts = self.overlapping.get(item,[self.items[item]])
+                    if len(alerts)>1:
+                        from map_picker import overlapping_alerts
+                        overlapping_alerts(self.app,alerts,self.open_alert)
+                    else:
+                        self.open_alert(alerts[0])
                     break
         self.drag = None
 
@@ -345,7 +462,9 @@ class AlertMap(Widget):
         palette = getattr(self.app, "palette", SKINS["Navy"])
         c.delete("all")
         self.items = {}
+        self.overlapping = {}
         w, h = c.winfo_width(), c.winfo_height()
+        self._projection_size = (w,h)
         step = 10 if self.scale < 20 else 2 if self.scale < 100 else .5
         left = self.center[0] - w / self.scale / 2
         bottom = self.center[1] - h / self.scale / 2
@@ -369,22 +488,33 @@ class AlertMap(Widget):
             _, y = self.project(0, lat)
             c.create_line(0, y, w, y, fill=palette["button"])
             c.create_text(5, y-8, text=f"{lat:g}°", fill=palette["muted"], anchor="w")
-        missing = 0
-        for row in self.rows:
-            alert = row["alert"]
-            polygons = rings(alert.get("geometry"))
-            if not polygons:
-                missing += 1
-            for polygon in polygons:
-                # Boundaries include interior rings; holes are left unfilled.
-                for ring in polygon:
-                    coords = [value for lon, lat, *_ in ring for value in self.project(lon, lat)]
-                    if len(coords) >= 6:
-                        item = c.create_polygon(coords, fill="", width=2,
-                                                outline=event_color(alert['event'],getattr(self.app,'palette',None)))
-                        self.items[item] = alert
+        places = self.context.draw(palette) if not self.on_point else self.place_labels
+        missing = sum(not rings(row['alert'].get('geometry')) for row in self.rows)
+        right,top = left+w/self.scale,bottom+h/self.scale
+        for outline in self.plan:
+            west,south,east,north = outline.bounds
+            if east<left or west>right or north<bottom or south>top:
+                continue
+            alerts = [alert for alert in outline.alerts if alert['id'] in self.allowed_ids]
+            if not alerts:
+                continue
+            coords=[]
+            previous=None
+            for lon,lat in outline.points:
+                point=self.project(lon,lat)
+                # Only display sampling: matching and original NWS geometry are
+                # untouched. Sub-pixel segments add cost without visible detail.
+                if previous is None or abs(point[0]-previous[0])+abs(point[1]-previous[1])>=.5:
+                    coords.extend(point);previous=point
+            if len(coords)<6:
+                x,y=self.project(west,south)
+                item=c.create_oval(x-2,y-2,x+2,y+2,outline=event_color(alerts[0]['event'],palette),width=2)
+            else:
+                item=c.create_polygon(coords,fill='',width=2,outline=event_color(alerts[0]['event'],palette))
+            self.items[item]=alerts[0]
+            self.overlapping[item]=alerts
         labels = [self.project(p.longitude, p.latitude) for p in self.profiles if p.latitude is not None]
-        for place in self.place_labels:
+        for place in places or []:
             x, y = self.project(place.longitude, place.latitude)
             if 10 < x < w - 100 and 60 < y < h - 25 and all(abs(x-px) > 90 or abs(y-py) > 26 for px, py in labels):
                 c.create_oval(x-2, y-2, x+2, y+2, fill=palette["muted"], outline="")

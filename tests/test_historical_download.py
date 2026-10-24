@@ -1,4 +1,5 @@
 """NWS archive contracts, atomic history isolation, and optional GUI workflow."""
+from gui_support import wait_view
 import csv
 from datetime import datetime, timedelta, timezone
 import os
@@ -311,6 +312,7 @@ class DownloadGuiTests(unittest.TestCase):
             dialog.download_button.invoke()
             self.pump(lambda:not dialog.busy)
         self.assertTrue(all(t!=threading.get_ident() for t in worker_threads))
+        wait_view(self.ui,self.panel)
         self.assertEqual(self.panel.rows[0]['source'],'NWS API archive')
         self.assertIn('Source: NWS API archive',self.panel.details.get())
         self.assertIn('Imported 1',dialog.message.get())
@@ -348,6 +350,7 @@ class DownloadGuiTests(unittest.TestCase):
             dialog.download_button.invoke()
             self.pump(lambda:not dialog.busy)
         self.assertNotIn('area',session.get.call_args.kwargs['params'])
+        wait_view(self.ui,self.panel)
         self.assertEqual(self.panel.rows[0]['locations'],'NWS archive · US')
 
     def test_options_persist_for_subsequent_one_click_download(self):

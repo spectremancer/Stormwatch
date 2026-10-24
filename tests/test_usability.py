@@ -1,4 +1,5 @@
 """Location setup, isolated simulations, and channel-specific delivery controls."""
+from gui_support import wait_view
 import os
 from pathlib import Path
 import sqlite3
@@ -140,6 +141,7 @@ class UsabilityTests(unittest.TestCase):
         for _ in range(3):
             self.receive()
         panel = self.owner.delivery_panel
+        wait_view(self.owner,panel)
         failed = next(r for r in panel.rows if r['channel'] == 'desktop')
         self.assertEqual(delivery_status(failed), 'Failed · retries exhausted')
         self.assertIn('Offline', panel.details.get())
@@ -156,6 +158,7 @@ class UsabilityTests(unittest.TestCase):
     def test_manual_retry_rejects_paused_or_disabled_live_channel(self):
         self.service.deliver_desktop.side_effect = RuntimeError('Offline')
         self.receive()
+        wait_view(self.owner,self.owner.delivery_panel)
         desktop = next(r for r in self.owner.delivery_panel.rows if r['channel'] == 'desktop')
         self.owner.toggle_monitoring()
         self.owner.retry_delivery(desktop)
@@ -168,6 +171,7 @@ class UsabilityTests(unittest.TestCase):
 
     def test_successful_channel_cannot_be_replayed_from_panel(self):
         self.receive()
+        wait_view(self.owner,self.owner.delivery_panel)
         sound = next(r for r in self.owner.delivery_panel.rows if r['channel'] == 'sound')
         self.owner.retry_delivery(sound)
         self.assertIn('Only failed channels', self.owner.status.get())
@@ -201,6 +205,7 @@ class UsabilityTests(unittest.TestCase):
         self.owner.open_demo()
         demo = self.owner.demo
         demo.simulate_delivery_failure()
+        wait_view(self.owner,demo.deliveries)
         desktop = next(r for r in demo.deliveries.rows if r['channel'] == 'desktop')
         demo.retry(desktop)
         self.pump(lambda: not demo.busy)

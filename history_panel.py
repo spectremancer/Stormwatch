@@ -7,6 +7,7 @@ from delivery_panel import local_time
 from history_store import HistoryFilter
 from history_download import HistoryDownload
 from event_catalog import WEATHER_EVENTS
+from async_views import LatestQuery
 
 
 class HistoryTable(Widget):
@@ -41,6 +42,7 @@ def outcome_label(value):
 class HistoryPanel:
     def __init__(self, parent, owner):
         self.owner, self.store = owner, owner.history
+        self.query = LatestQuery(owner.app)
         self.filters = HistoryFilter()
         self.page = 0
         self.rows = []
@@ -110,14 +112,25 @@ class HistoryPanel:
     def refresh(self):
         old = self.current()
         selected_id = old['sequence'] if old else None
-        locations, events = self.store.history_options()
-        for control, values in ((self.location, ['All locations'] + sorted(set(locations) | {p.name for p in self.owner.profiles})),
-                                (self.event, ['All event types'] + sorted(set(events) | set(WEATHER_EVENTS)))):
+        filters, page = self.filters, self.page
+        self.counter.set('Searching archive…')
+        def query():
+            with self.store.read_snapshot() as reader:
+                options = reader.history_options()
+                total = reader.history_count(filters)
+                current = min(page,max(0,(total-1)//50))
+                return options,total,current,reader.search_history(filters,offset=current*50)
+        self.query.request(query,lambda result:self.render(result,selected_id),
+                           lambda error:self.message.set(f'History search failed: {error}'))
+
+    def render(self, result, selected_id):
+        if self.owner.app._closed:
+            return
+        (locations, events),total,self.page,self.rows = result
+        for control, values in ((self.location,['All locations']+sorted(set(locations)|{p.name for p in self.owner.profiles})),
+                                (self.event,['All event types']+sorted(set(events)|set(WEATHER_EVENTS)))):
             control.values = tuple(values)
             control.configure(values=values)
-        total = self.store.history_count(self.filters)
-        self.page = min(self.page, max(0,(total-1)//50))
-        self.rows = self.store.search_history(self.filters, offset=self.page*50)
         self.table.tree.delete(*self.table.tree.get_children())
         for i, row in enumerate(self.rows):
             self.table.tree.insert('', 'end', iid=str(i), values=(local_time(row['recorded_at']) +
@@ -199,6 +212,7 @@ class HistoryPanel:
             self.downloader.cancel.set()
 
     def close(self):
+        self.query.wait()
         self.cancel_download()
         for future in (self.future,self.download_future):
             if future is not None:

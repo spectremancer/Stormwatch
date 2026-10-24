@@ -136,6 +136,25 @@ def main():
             ui.commands.show_tab('Map')
             root.update()
             ui.map.fit()
+            # National overview, with additional isolated fictional map examples.
+            scenarios = [
+                ('Red Flag Warning','Southern California','Severe',(-120,33.5,-116,36.2)),
+                ('High Wind Warning','Pacific Northwest','Severe',(-124,45.4,-120.8,48)),
+                ('Winter Storm Warning','Northern Rockies','Severe',(-115.5,44,-109,48)),
+                ('Severe Thunderstorm Watch','Central Plains','Severe',(-103,36,-96,41)),
+                ('Tornado Watch','Texas; Oklahoma','Severe',(-100,31.8,-94,36.5)),
+                ('Flash Flood Warning','Lower Mississippi Valley','Severe',(-93,30.8,-89,34)),
+                ('Flood Watch','Ohio Valley','Moderate',(-87,37.2,-80.5,41.2)),
+                ('Wind Advisory','New England','Moderate',(-74,41.5,-69.5,45.2))]
+            rows = list(ui.map.rows)
+            for number,(event,area,severity,bounds) in enumerate(scenarios,20):
+                a = sample(number,event,area,severity,bounds,180,now)
+                rows.append(dict(id=a['id'],version='SIMULATION',alert=a,locations=[]))
+            ui.map.render(rows,ui.profiles)
+            ui.map._initial_region = False
+            ui.map.center = (-98,38)
+            ui.map.scale = min((ui.map.canvas.winfo_width()-80)/62,(ui.map.canvas.winfo_height()-80)/34)
+            ui.map.request_draw()
             capture(ui,ui.app,'alert-map.png')
             ui.commands.show_tab('Notifications')
             ui.delivery_panel.refresh()

@@ -201,8 +201,13 @@ class RadarService:
 
     def load(self, view):
         import json
-        if not (0 < view.width <= 1800 and 0 < view.height <= 1200 and view.scale > 0):
-            raise ValueError('Resize the map to at most 1800 × 1200 pixels to load radar.')
+        if not (0 < view.width <= 16384 and 0 < view.height <= 16384 and view.scale > 0):
+            raise ValueError('Invalid radar viewport dimensions.')
+        original_view = view
+        ratio = min(1,1800/view.width,1200/view.height)
+        if ratio < 1:
+            view = Viewport(max(1,round(view.width*ratio)),max(1,round(view.height*ratio)),
+                            view.longitude,view.latitude,view.scale*ratio)
         try:
             metadata = json.loads(self._fetch(METADATA_URL, 256*1024))
         except (json.JSONDecodeError,UnicodeDecodeError):
@@ -246,4 +251,4 @@ class RadarService:
                 if south < -85.05112878:
                     draw.rectangle((0,int((north+85.05112878)*view.scale),view.width,view.height),fill=(0,0,0,0))
                 result.append((stamp,projected))
-        return view,result
+        return original_view,result

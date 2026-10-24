@@ -121,7 +121,7 @@ class DashboardTests(unittest.TestCase):
     def test_pause_and_connection_health(self):
         self.receive([alert()])
         self.ui.toggle_monitoring()
-        self.assertIn("STALE", self.ui.health.get())
+        self.assertIn("PAUSED", self.ui.health.get())
         self.ui.received(self.ui.generation - 1, ({"other": alert(id="other")}, ""))
         self.assertEqual(self.ui.count, 1)
         self.ui.running = True

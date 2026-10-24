@@ -1,5 +1,6 @@
 import json
 from datetime import datetime, timedelta, timezone
+from gui_support import wait_view
 import os
 from pathlib import Path
 import subprocess
@@ -177,7 +178,7 @@ class ExplanationSpeechGuiTests(unittest.TestCase):
         self.assertIn('Speech is switched off',text)
         self.assertIn('Tornado Warning selected',text)
         self.assertIn('Submitted',text)
-        self.ui.delivery_panel.refresh()
+        wait_view(self.ui,self.ui.delivery_panel)
         self.assertIn('Why this notification:',self.ui.delivery_panel.details.get())
 
     def test_startup_backlog_is_silent_and_only_post_start_alerts_are_spoken(self):

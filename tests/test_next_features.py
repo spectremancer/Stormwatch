@@ -204,8 +204,8 @@ class NextFeatureGuiTests(unittest.TestCase):
         self.assertIn('Disabled',text)
         self.assertEqual(self.ui.overview.freshness,'LIVE')
         self.ui.toggle_monitoring()
-        self.assertIn('STALE',self.ui.overview.freshness)
-        self.assertTrue(all('STALE' in label.cget('text') for label in self.ui.overview.health_labels))
+        self.assertIn('PAUSED',self.ui.overview.freshness)
+        self.assertTrue(all('PAUSED' in label.cget('text') for label in self.ui.overview.health_labels))
 
     def test_change_summary_is_visible_in_feed_cards_and_history(self):
         self.receive([alert(expires='2099-01-01T01:00:00Z')])

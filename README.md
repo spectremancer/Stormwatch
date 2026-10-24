@@ -32,8 +32,9 @@ Before choosing **Start monitoring**, use **NWS refresh** in the sidebar to sele
 across restarts, including `--monitor` and launch-at-login startup. The selector
 is locked while monitoring; pause to choose a different interval, then start
 again. The first check runs immediately; subsequent checks wait the selected
-interval after the previous check finishes. Failed requests use the same retry
-interval. The countdown and stale-data checks follow the chosen interval.
+interval after the previous check finishes. Consecutive failures progressively
+increase the retry delay, honoring provider Retry-After instructions. The
+countdown shows that delay; stale-data checks use the selected normal interval.
 Radar retains its separate five-minute refresh schedule.
 
 `--test-tornado` and `--test-hurricane` play `alert.mp3` without opening the GUI.
@@ -274,15 +275,16 @@ allows future monitored types; **No spoken events** leaves automatic speech
 silent. **Test voice** is an explicit preview, even with automatic speech off.
 
 After a complete NWS refresh has been processed, eligible speech is grouped by
-event type. Twelve new Gale Warnings produce one Gale Warning report rather than
+event type and matching saved-location group. Twelve new Gale Warnings produce one Gale Warning report rather than
 twelve separate announcements. The report uses deduplicated NWS affected-area
-names, with punctuation pauses between locations, followed by the latest known
-expiration among that batch's still-active alerts in the computer's local time.
+names, with punctuation pauses between locations. It announces the expiration
+range when end times differ, or the single expiration when they agree, in the computer's local time.
 For example: “Gale Warning for North coastal waters; South coastal waters;
 Outer waters. Until October 19 at 7 PM local time.” Broad profile names such as
 US or United States are not substituted for available NWS area descriptions.
 
-Reports list up to 16 areas within a 480-character location budget and summarize
+Report length is configurable in Notification Preferences (4, 8, or 16 areas);
+the detailed setting uses a 480-character location budget. Reports summarize
 additional areas by count so nationwide reports remain brief. Full coverage is
 available in alert details and the map. Missing expiration information is stated
 explicitly. Reports do not rewrite safety instructions or infer storm movement.
@@ -503,7 +505,7 @@ status under the map also reports the reason instead of only “Radar unavailabl
 | TLS certificate validation failed | Check the system clock and trusted certificates. TLS verification stays enabled. |
 | Timed out / could not connect | Check internet access, DNS, firewall, and system proxy settings. |
 | No recent generated frames | Check the system clock or provider availability. |
-| Map too large | Resize the map to at most 1800 × 1200 pixels, then retry. |
+| Large / high-DPI map | Radar uses a bounded internal resolution and scales to the window; provider detail remains limited. |
 
 Supported HTTPS redirects between the two trusted RainViewer hosts are followed,
 up to a bounded limit. Other redirect hosts, oversized responses, and invalid
@@ -573,7 +575,7 @@ main tabs, and map controls directly.
   Select events in the sidebar and edit location rules with the sidebar Edit button. Clear Alert
   Feed clears only the session feed, not saved history.
 - **Data** opens Metrics, recent NWS history downloads, CSV export, local NWS
-  GeoJSON import, source information, and a read-only storage/retention summary.
+  GeoJSON import, source information, and validated backup/restore and explicit archive-retention tools.
   Imports accept NWS FeatureCollections up to 10 MiB and 5,000 features, retain
   supported weather alerts, deduplicate versions, and run atomically in a worker.
   Imported records are labeled **Local NWS GeoJSON** and never enter live views
@@ -867,7 +869,7 @@ NWS Short Term Forecast alert products are supported when supplied by the alerts
 
 ![Built-in documentation popup with left-side FAQ topics, global search, and detailed spoken-alert how-to answers](docs/screenshots/documentation.png)
 
-*Browse 158 FAQs across 26 topics, search all answers, and copy instructions while
+*Browse 167 FAQs across 28 topics, search all answers, and copy instructions while
 keeping the application open.*
 
 Help → Documentation opens an offline, non-modal guide with scrollable topic tabs
@@ -881,3 +883,99 @@ Closing and reopening preserves the guide's current topic and search; F1 returns
 to Quick start. Help → Keyboard Shortcuts opens its corresponding guide topic.
 Content is bundled in `data/user_guide.md`, including packaged builds; opening or
 searching help does not request weather data or deliver notifications.
+
+## Version 1.1 stabilization
+
+- NWS alert processing and device delivery no longer wait for optional boundary
+  enrichment. Live fetch, sound/desktop, and speech work have reserved worker capacity.
+  Repeated failures back off; ETag validation avoids re-downloading unchanged snapshots.
+- History and Notifications use coalesced background queries on independent WAL
+  readers. Hidden views refresh on demand. Supported SQLite builds maintain a
+  trigram substring-search index. Atomic import locks defer monitor work without
+  blocking Tk; large active views are prepared off the UI thread.
+- The sidebar divider is resizable and **Event filters** collapses it. Event search,
+  category/selected-only filters, and Severe Weather/Winter/Marine/Tropical presets
+  organize the event catalog. The window supports smaller laptop workspaces.
+- Active Alerts provides persistent compact cards and priority, expiration,
+  issue-time, or urgency sorting. Cards can focus their affected area on Map.
+- **Layers…** adds offline state boundaries, optional counties at closer zooms,
+  major-city labels, and a color key. Display plans cull off-screen geometry and
+  share coincident outlines; clicking an overlap opens a searchable message list.
+  Matching continues to use the unmodified provider geometry. Large radar viewports use bounded internal
+  resolution and display scaling rather than rejecting ordinary high-resolution windows.
+- **Alerts → Notification Preferences…** combines channels, category rules, event
+  allowlists, spoken report length, and a decision preview for the selected profile.
+  Existing sound/speech shortcuts remain available. Speech groups by matching
+  locations and event type; differing expirations are announced as a range.
+- A shared health model distinguishes Paused, Connecting, Live, Degraded, and Stale.
+  **Readiness** / **Tools → Readiness Review** lists configured coverage and device
+  prerequisites; the normal first launch opens it automatically.
+- **Data → Metrics** adds Timeline and Coverage & analysis tabs. Counts, county UGC
+  comparisons, sources, time bases, and message-validity duration remain explicitly
+  distinct from physical storms and climatological records.
+- **Data → Storage & Retention…** creates validated online backups and stages
+  restores for the next normal launch, preserving a pre-restore backup. Explicit
+  30/90/365-day archive cleanup backs up first and preserves active alerts and
+  all version/delivery receipts. Automatic deletion is disabled. Logs rotate at 2 MiB.
+
+### Release and acceptance process
+
+Version/build identity and the startup source commit appear in About and Diagnostics.
+Packaged builds embed their source commit and whether that source was modified.
+The versioned release
+workflow runs on a matching `v1.1.0` tag or manually for artifacts; only tag runs
+publish a release. It builds and checks the actual Windows executable, creates
+an Inno Setup per-user installer, and includes a commit manifest and SHA-256 sums.
+The manifest requires a clean build source matching the acceptance report's
+embedded commit and the exact tested executable's SHA-256.
+The ordinary compatibility workflow still tests Windows/Linux and Python 3.12/3.13.
+No tag or release is created simply by pushing these source changes to main.
+
+The installer and executable are unsigned unless separately signed with the
+maintainer's certificate and verified. Signing credentials are not bundled.
+The checked-in executable remains a historical build; use a newly verified artifact.
+The application does not silently install updates; **Help → Release Downloads**
+opens available versioned builds.
+
+An offline acceptance command works in source and packaged builds:
+
+```sh
+python -B main.py --self-test /tmp/stormwatch-check.json
+# Windows packaged build:
+# Stormwatch.exe --self-test C:\Temp\stormwatch-check.json
+```
+
+Performance goals on the documented local benchmark are a UI heartbeat below
+100 ms for 1,000 alerts and below 200 ms for a 5,000-alert burst. Measure complete
+processing time separately: the first burst also builds the searchable archive
+index. These are local targets, not promises for every device or network.
+The endurance workload exercises complex polygons, a populated searchable archive,
+five profiles, simulated radar loading, background imports, repeated updates,
+ending events, and simulated reconnection:
+
+```sh
+DISPLAY=:99 SDL_AUDIODRIVER=dummy python -B scripts/soak_monitoring.py --seconds 60 --report /tmp/soak.json
+# Dedicated test machine, actual multi-day validation:
+# python -B scripts/soak_monitoring.py --hours 48 --report soak-48h.json
+```
+
+Reports include process RSS and maximum UI heartbeat gap. The CI ceiling is looser
+for shared runners and is not a substitute for the local targets. A short run does
+not certify multi-day memory stability. Before distribution, follow
+[the native acceptance checklist](docs/RELEASE_ACCEPTANCE.md), including actual
+Windows delivery, tray, scaling, packaged startup, and sleep/wake checks.
+
+For recovery when the normal database cannot open, fully exit all copies and run
+`python main.py --restore-backup /path/to/stormwatch-backup.sqlite3` (or the
+packaged executable with the same flag). This explicitly replaces local data
+from a validated backup. A damaged original and its journals are preserved as
+`.before-restore.corrupt.sqlite3` files before the valid staged backup is applied.
+
+For a Windows installer upgrade, fully exit Stormwatch with File → Exit or the
+tray's Quit action first; closing the main window may only hide it. The per-user
+installer keeps weather history/settings in the separate user-data directory.
+Uninstall removes a login-startup entry only when it points to that installation;
+a portable copy's startup entry and all user data are preserved.
+
+Measured processing and mixed-workload results, including the cold indexing
+tradeoff and memory-validation limits, are in [docs/PERFORMANCE.md](docs/PERFORMANCE.md).

@@ -1,0 +1,68 @@
+name: Versioned Windows release
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  package:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      SDL_AUDIODRIVER: dummy
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Validate release identity
+        shell: python
+        run: |
+          import os
+          from version import VERSION
+          from pathlib import Path
+          if os.environ['GITHUB_REF_TYPE']=='tag':
+              assert os.environ['GITHUB_REF_NAME']=='v'+VERSION
+          assert '"'+VERSION+'"' in Path('packaging/stormwatch.iss').read_text()
+      - run: python -m pip install -r requirements.txt pyinstaller==6.16.0
+      - run: python -B -m unittest discover -s tests -v
+      - run: python -m PyInstaller --clean --noconfirm main.spec
+      - name: Test the actual packaged executable
+        shell: pwsh
+        run: |
+          $process = Start-Process -FilePath dist/main.exe -ArgumentList '--self-test', "$env:RUNNER_TEMP/packaged-check.json" -PassThru
+          if (-not $process.WaitForExit(120000)) { $process.Kill(); throw 'Packaged check timed out' }
+          if ($process.ExitCode -ne 0) { throw 'Packaged check failed' }
+          $report = Get-Content "$env:RUNNER_TEMP/packaged-check.json" | ConvertFrom-Json
+          if ($report.status -ne 'passed') { throw 'Missing packaged check success' }
+      - name: Build per-user installer
+        shell: pwsh
+        run: |
+          choco install innosetup --yes --no-progress
+          & "${env:ProgramFiles(x86)}/Inno Setup 6/ISCC.exe" packaging/stormwatch.iss
+          if ($LASTEXITCODE -ne 0) { throw 'Installer compilation failed' }
+      - run: python scripts/release_manifest.py --self-test-report "$env:RUNNER_TEMP/packaged-check.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stormwatch-windows-release
+          path: |
+            dist/*.exe
+            dist/release-manifest.json
+            dist/SHA256SUMS.txt
+  publish:
+    if: github.ref_type == 'tag'
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: stormwatch-windows-release
+          path: release
+      - name: Publish tagged build and checksums
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" release/* --repo "$GITHUB_REPOSITORY" --title "Stormwatch $GITHUB_REF_NAME" --generate-notes

@@ -98,6 +98,7 @@ class App(_Window):
         _positive(max_workers, "max_workers")
         _positive(max_pending, "max_pending")
         self._workers = WorkerPool(max_workers, max_pending)
+        self._critical_workers = WorkerPool(3,32)
         self.stop_event = threading.Event()
         self.app = self
         self._thread_id = threading.get_ident()
@@ -158,7 +159,7 @@ class App(_Window):
 
     def run_in_thread(self, command: Callback, *args: Any,
                       on_result: Callback | None = None,
-                      on_error: Callback | None = None, **kwargs: Any) -> Future:
+                      on_error: Callback | None = None, critical: bool = False, **kwargs: Any) -> Future:
         """Run work in the bounded daemon pool; completion callbacks run on the GUI thread.
 
         Workers must not access Tk. The Future represents the worker's result,
@@ -172,7 +173,7 @@ class App(_Window):
         with self._delivery_lock:
             if self._closed:
                 raise RuntimeError("Cannot start work after the app has closed")
-        future = self._workers.submit(command, *args, **kwargs)
+        future = (self._critical_workers if critical else self._workers).submit(command, *args, **kwargs)
 
         def completed(result: Future) -> None:
             if result.cancelled():
@@ -208,6 +209,7 @@ class App(_Window):
             self._closed = True
         self.stop_event.set()
         self._workers.shutdown()
+        self._critical_workers.shutdown()
         self.root.after_cancel(self._poll_id)
         for window in self._windows:
             if not window._closed:

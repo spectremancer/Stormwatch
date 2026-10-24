@@ -65,6 +65,8 @@ class LocationProfile:
     # None follows all monitored events; [] silences automatic event sounds.
     sound_events: list[str] | None = None
     speech: bool = False
+    speech_max_areas: int = 16
+    speech_max_chars: int = 480
     speech_events: list[str] | None = field(default_factory=lambda: [
         'Tornado Warning','Tornado Watch','Hurricane Warning','Hurricane Watch'])
 
@@ -88,6 +90,10 @@ class LocationProfile:
                 value = getattr(self, f"{kind}_{channel}")
                 if value is not None and not isinstance(value, bool):
                     raise ValueError("Event-category notification rules must be on or off.")
+        if type(self.speech_max_areas) is not int or not 1<=self.speech_max_areas<=16:
+            raise ValueError('Speech area limit must be between 1 and 16.')
+        if type(self.speech_max_chars) is not int or not 80<=self.speech_max_chars<=480:
+            raise ValueError('Speech text limit must be between 80 and 480 characters.')
         if not isinstance(self.speech,bool):
             raise ValueError('Read alerts aloud must be on or off.')
         for channel in ('sound','speech'):

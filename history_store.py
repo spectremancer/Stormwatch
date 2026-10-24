@@ -78,6 +78,21 @@ class HistoryArchive:
                                         'Issued (imported)' if stamp else 'Unknown (imported)')
                 self.connection.execute("INSERT OR REPLACE INTO settings VALUES ('archive_initialized','true')")
 
+            # Trigram search retains substring semantics for words of 3+ characters.
+            # Older SQLite builds fall back to escaped LIKE without losing data.
+            self.fts_enabled = False
+            try:
+                existed = self.connection.execute("SELECT 1 FROM sqlite_master WHERE name='history_fts'").fetchone()
+                self.connection.execute("CREATE VIRTUAL TABLE IF NOT EXISTS history_fts USING fts5(search_text,content='history_events',content_rowid='sequence',tokenize='trigram')")
+                self.connection.execute("CREATE TRIGGER IF NOT EXISTS history_fts_insert AFTER INSERT ON history_events BEGIN INSERT INTO history_fts(rowid,search_text) VALUES(new.sequence,new.search_text); END")
+                self.connection.execute("CREATE TRIGGER IF NOT EXISTS history_fts_delete AFTER DELETE ON history_events BEGIN INSERT INTO history_fts(history_fts,rowid,search_text) VALUES('delete',old.sequence,old.search_text); END")
+                if not existed:
+                    self.connection.execute("INSERT INTO history_fts(history_fts) VALUES('rebuild')")
+                self.fts_enabled = True
+            except sqlite3.OperationalError as error:
+                if 'no such module' not in str(error).lower() and 'tokenizer' not in str(error).lower():
+                    raise
+
     def _archive_event(self, alert, version, kind, locations=None, stamp=None, basis='Observed', summary='', source='Stormwatch'):
         if stamp is None:
             stamp = datetime.now(timezone.utc).isoformat()
@@ -133,14 +148,17 @@ class HistoryArchive:
                 raise DownloadCancelled('Download cancelled. No archive records were imported.')
         return imported
 
-    @staticmethod
-    def _archive_where(filters, before=None):
+    def _archive_where(self, filters, before=None):
         lower, upper = filters.boundaries()
         clauses, values = [], []
         for word in filters.text.strip().casefold().split():
-            literal = word.replace('\\','\\\\').replace('%','\\%').replace('_','\\_')
-            clauses.append("e.search_text LIKE ? ESCAPE '\\'")
-            values.append('%'+literal+'%')
+            if getattr(self,'fts_enabled',False) and len(word)>=3:
+                clauses.append('e.sequence IN (SELECT rowid FROM history_fts WHERE history_fts MATCH ?)')
+                values.append('"'+word.replace('"','""')+'"')
+            else:
+                literal = word.replace('\\','\\\\').replace('%','\\%').replace('_','\\_')
+                clauses.append("e.search_text LIKE ? ESCAPE '\\'")
+                values.append('%'+literal+'%')
         if filters.location:
             clauses.append('EXISTS (SELECT 1 FROM history_locations l WHERE l.sequence=e.sequence AND l.name=?)')
             values.append(filters.location)

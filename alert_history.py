@@ -49,54 +49,60 @@ class AlertHistory(HistoryArchive):
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.lock = threading.RLock()
         self._transaction_depth = 0
+        self.revision = 0
         self.connection = sqlite3.connect(self.path, check_same_thread=False)
-        self.connection.row_factory = sqlite3.Row
-        self.connection.execute("PRAGMA journal_mode=WAL")
-        self.connection.executescript('''
-            CREATE TABLE IF NOT EXISTS processed_alerts (id TEXT PRIMARY KEY, processed_at TEXT DEFAULT CURRENT_TIMESTAMP);
-            CREATE TABLE IF NOT EXISTS settings (name TEXT PRIMARY KEY, data TEXT NOT NULL);
-            CREATE TABLE IF NOT EXISTS channel_submissions (id TEXT, version TEXT, channel TEXT,
-                state TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, error TEXT DEFAULT '',
-                last_attempt TEXT DEFAULT '', members TEXT DEFAULT '[]', PRIMARY KEY(id,version,channel));
-            CREATE TABLE IF NOT EXISTS profiles (id TEXT PRIMARY KEY, data TEXT NOT NULL);
-            CREATE TABLE IF NOT EXISTS alerts (id TEXT PRIMARY KEY, version TEXT, data TEXT NOT NULL,
-                status TEXT NOT NULL, updated TEXT NOT NULL);
-            CREATE TABLE IF NOT EXISTS versions (id TEXT, version TEXT, kind TEXT, data TEXT NOT NULL,
-                displayed INTEGER DEFAULT 0, PRIMARY KEY(id, version));
-            CREATE TABLE IF NOT EXISTS deliveries (id TEXT, version TEXT, profile TEXT, channel TEXT,
-                state TEXT DEFAULT 'pending', attempts INTEGER DEFAULT 0, error TEXT DEFAULT '',
-                PRIMARY KEY(id, version, profile, channel));
-            CREATE TABLE IF NOT EXISTS notification_decisions (id TEXT, version TEXT, profile TEXT, channel TEXT,
-                location_name TEXT, allowed INTEGER, reason TEXT, recorded_at TEXT,
-                PRIMARY KEY(id,version,profile,channel));
-        ''')
-        alert_columns = {row[1] for row in self.connection.execute("PRAGMA table_info(alerts)")}
-        if "expires_at" not in alert_columns:
-            self.connection.execute("ALTER TABLE alerts ADD COLUMN expires_at TEXT NOT NULL DEFAULT ''")
-        if not self.connection.execute("SELECT 1 FROM settings WHERE name='expiry_basis_v2'").fetchone():
-            for row in self.connection.execute("SELECT id,data,expires_at FROM alerts").fetchall():
-                alert = json.loads(row["data"])
-                end = expiration_of(alert)
-                stamp = end.isoformat() if end else ''
-                if stamp != row['expires_at']:
-                    self.connection.execute("UPDATE alerts SET expires_at=? WHERE id=?", (stamp,row['id']))
-            self.connection.execute("INSERT INTO settings VALUES ('expiry_basis_v2','true')")
-        self.connection.execute("CREATE INDEX IF NOT EXISTS active_alert_expiry ON alerts(status,expires_at)")
-        self.connection.execute("CREATE INDEX IF NOT EXISTS active_alert_updated ON alerts(status,updated DESC)")
-        if 'summary' not in {row[1] for row in self.connection.execute('PRAGMA table_info(versions)')}:
-            self.connection.execute("ALTER TABLE versions ADD COLUMN summary TEXT NOT NULL DEFAULT ''")
-        columns = {row[1] for row in self.connection.execute("PRAGMA table_info(deliveries)")}
-        for name in ("scheduled_at", "last_attempt", "reason"):
-            if name not in columns:
-                self.connection.execute(f"ALTER TABLE deliveries ADD COLUMN {name} TEXT NOT NULL DEFAULT ''")
-        self.connection.commit()
-        self._initialize_archive()
+        try:
+            self.connection.row_factory = sqlite3.Row
+            self.connection.execute("PRAGMA journal_mode=WAL")
+            self.connection.executescript('''
+                CREATE TABLE IF NOT EXISTS processed_alerts (id TEXT PRIMARY KEY, processed_at TEXT DEFAULT CURRENT_TIMESTAMP);
+                CREATE TABLE IF NOT EXISTS settings (name TEXT PRIMARY KEY, data TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS channel_submissions (id TEXT, version TEXT, channel TEXT,
+                    state TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, error TEXT DEFAULT '',
+                    last_attempt TEXT DEFAULT '', members TEXT DEFAULT '[]', PRIMARY KEY(id,version,channel));
+                CREATE TABLE IF NOT EXISTS profiles (id TEXT PRIMARY KEY, data TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS alerts (id TEXT PRIMARY KEY, version TEXT, data TEXT NOT NULL,
+                    status TEXT NOT NULL, updated TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS versions (id TEXT, version TEXT, kind TEXT, data TEXT NOT NULL,
+                    displayed INTEGER DEFAULT 0, PRIMARY KEY(id, version));
+                CREATE TABLE IF NOT EXISTS deliveries (id TEXT, version TEXT, profile TEXT, channel TEXT,
+                    state TEXT DEFAULT 'pending', attempts INTEGER DEFAULT 0, error TEXT DEFAULT '',
+                    PRIMARY KEY(id, version, profile, channel));
+                CREATE TABLE IF NOT EXISTS notification_decisions (id TEXT, version TEXT, profile TEXT, channel TEXT,
+                    location_name TEXT, allowed INTEGER, reason TEXT, recorded_at TEXT,
+                    PRIMARY KEY(id,version,profile,channel));
+            ''')
+            alert_columns = {row[1] for row in self.connection.execute("PRAGMA table_info(alerts)")}
+            if "expires_at" not in alert_columns:
+                self.connection.execute("ALTER TABLE alerts ADD COLUMN expires_at TEXT NOT NULL DEFAULT ''")
+            if not self.connection.execute("SELECT 1 FROM settings WHERE name='expiry_basis_v2'").fetchone():
+                for row in self.connection.execute("SELECT id,data,expires_at FROM alerts").fetchall():
+                    alert = json.loads(row["data"])
+                    end = expiration_of(alert)
+                    stamp = end.isoformat() if end else ''
+                    if stamp != row['expires_at']:
+                        self.connection.execute("UPDATE alerts SET expires_at=? WHERE id=?", (stamp,row['id']))
+                self.connection.execute("INSERT INTO settings VALUES ('expiry_basis_v2','true')")
+            self.connection.execute("CREATE INDEX IF NOT EXISTS active_alert_expiry ON alerts(status,expires_at)")
+            self.connection.execute("CREATE INDEX IF NOT EXISTS active_alert_updated ON alerts(status,updated DESC)")
+            if 'summary' not in {row[1] for row in self.connection.execute('PRAGMA table_info(versions)')}:
+                self.connection.execute("ALTER TABLE versions ADD COLUMN summary TEXT NOT NULL DEFAULT ''")
+            columns = {row[1] for row in self.connection.execute("PRAGMA table_info(deliveries)")}
+            for name in ("scheduled_at", "last_attempt", "reason"):
+                if name not in columns:
+                    self.connection.execute(f"ALTER TABLE deliveries ADD COLUMN {name} TEXT NOT NULL DEFAULT ''")
+            self.connection.commit()
+            self._initialize_archive()
+        except BaseException:
+            self.connection.close()
+            raise
 
     @contextmanager
     def transaction(self):
         """Nested operations share one atomic commit per short processing batch."""
         with self.lock:
             outer = self._transaction_depth == 0
+            before = self.connection.total_changes if outer else None
             self._transaction_depth += 1
             try:
                 yield
@@ -108,11 +114,30 @@ class AlertHistory(HistoryArchive):
                 if outer:
                     try:
                         self.connection.commit()
+                        if self.connection.total_changes != before:
+                            self.revision += 1
                     except BaseException:
                         self.connection.rollback()
                         raise
             finally:
                 self._transaction_depth -= 1
+
+    @contextmanager
+    def read_snapshot(self):
+        """Independent WAL reader; imports never hold this reader's Python lock."""
+        reader = object.__new__(type(self))
+        reader.path = self.path
+        reader.lock = threading.RLock()
+        reader._transaction_depth = 0
+        reader.revision = self.revision
+        reader.connection = sqlite3.connect(self.path.resolve().as_uri()+'?mode=ro',uri=True,timeout=2)
+        reader.connection.row_factory = sqlite3.Row
+        try:
+            reader.connection.execute('BEGIN')
+            reader.fts_enabled = getattr(self,'fts_enabled',False)
+            yield reader
+        finally:
+            reader.connection.close()
 
     def known_ids(self, alert_ids):
         values = list(alert_ids)
@@ -152,6 +177,13 @@ class AlertHistory(HistoryArchive):
         profile.validate()
         with self.transaction():
             self.connection.execute("INSERT OR REPLACE INTO profiles VALUES (?, ?)", (profile.id, profile.to_json()))
+
+    def update_profile_events(self, profile_id, events):
+        """Event edits never replace independently saved channel/geography fields."""
+        payload=json.dumps(sorted(set(events)))
+        with self.transaction():
+            self.connection.execute("""UPDATE profiles SET data=json_set(data,'$.events',json(?))
+                WHERE id=? AND json_extract(data,'$.events') IS NOT json(?)""",(payload,profile_id,payload))
 
     def delete_profile(self, profile_id):
         with self.transaction():

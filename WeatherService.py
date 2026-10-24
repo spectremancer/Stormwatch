@@ -1,14 +1,19 @@
 from datetime import datetime, timedelta, timezone
 import json
 import logging
+from logging.handlers import RotatingFileHandler
+from copy import deepcopy
+from collections.abc import Mapping
 import platform
 import subprocess
 import shutil
 import time
+import threading
 import pygame
 from pathlib import Path
 
 import requests
+from models import AlertData
 from plyer import notification
 from event_catalog import WEATHER_EVENTS, is_supported_event
 from application_paths import state_directory
@@ -21,6 +26,7 @@ class WeatherService:
 
     def __init__(self, interval=60):
         self.interval = interval
+        self.stop_event = threading.Event()
         self.base_dir = Path(__file__).resolve().parent
         self.state_dir = state_directory()
         self.state_dir.mkdir(parents=True, exist_ok=True)
@@ -45,8 +51,8 @@ class WeatherService:
                 "%(asctime)s %(levelname)s: %(message)s"
             )
 
-            file_handler = logging.FileHandler(
-                self.state_dir / "storm_monitor.log",
+            file_handler = RotatingFileHandler(
+                self.state_dir / "storm_monitor.log", maxBytes=2*1024*1024, backupCount=5,
                 encoding="utf-8",
             )
             file_handler.setFormatter(formatter)
@@ -85,8 +91,12 @@ class WeatherService:
 
     def _features(self, url, params=None):
         features = []
+        if not hasattr(self,"_http_cache"):
+            self._http_cache = {}
         visited = set()
         while url:
+            if getattr(self,'stop_event',None) is not None and self.stop_event.is_set():
+                raise RuntimeError('Weather request cancelled during shutdown')
             # NWS pagination remains on the same trusted API host.
             from urllib.parse import urlparse
             if urlparse(url).scheme != "https" or urlparse(url).netloc != "api.weather.gov" or url in visited:
@@ -94,9 +104,19 @@ class WeatherService:
             visited.add(url)
             if len(visited) > 100:
                 raise ValueError("NWS pagination limit exceeded; snapshot is incomplete")
-            response = self.session.get(url, params=params, timeout=20)
-            response.raise_for_status()
-            data = response.json()
+            key = (url,tuple(sorted((params or {}).items())))
+            cached = self._http_cache.get(key)
+            headers = {'If-None-Match':cached[0]} if cached and cached[0] else {}
+            response = self.session.get(url, params=params, timeout=(5,20),headers=headers)
+            if response.status_code == 304 and cached:
+                data = deepcopy(cached[1])
+            else:
+                response.raise_for_status()
+                data = response.json()
+                etag = response.headers.get('ETag','') if isinstance(response.headers,Mapping) else ''
+                if len(self._http_cache)>=100:
+                    self._http_cache.clear()
+                self._http_cache[key] = (etag,deepcopy(data))
             if not isinstance(data.get("features"), list):
                 raise ValueError("Invalid NWS alert response")
             features.extend(data["features"])
@@ -120,10 +140,14 @@ class WeatherService:
         if not hasattr(self, "_zone_cache"):
             self._zone_cache = {}
         for alert in alerts:
+            if getattr(self,'stop_event',None) is not None and self.stop_event.is_set():
+                return
             if alert.get("geometry") or not any(p.matches(alert) for p in profiles):
                 continue
             urls = alert.get("zones", [])
             for url in urls:
+                if getattr(self,'stop_event',None) is not None and self.stop_event.is_set():
+                    return
                 if url in self._zone_cache or max_requests <= 0:
                     continue
                 if urlparse(url).scheme != "https" or urlparse(url).netloc != "api.weather.gov":
@@ -156,7 +180,7 @@ class WeatherService:
         return [props[key].rstrip("/").rsplit("/", 1)[-1]
                 for key in ("county", "forecastZone", "fireWeatherZone") if props.get(key)]
 
-    def parse_alert(self, feature):
+    def parse_alert(self, feature) -> AlertData | None:
         props = feature.get("properties") or {}
         event = props.get("event") or ""
 

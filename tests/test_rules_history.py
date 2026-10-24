@@ -1,5 +1,6 @@
 import csv
 from datetime import datetime, timedelta, timezone
+from gui_support import wait_view
 import json
 import os
 from pathlib import Path
@@ -224,18 +225,21 @@ class CombinedNotificationTests(unittest.TestCase):
         for identifier,event in (('warning','Tornado Warning'),('watch','Tornado Watch'),('flood','Flood Warning')):
             self.owner.history.observe(alert(id=identifier,event=event),locations=[self.owner.profile])
         panel = self.owner.history_panel
-        panel.refresh()
+        wait_view(self.owner,panel)
         self.assertIn('Tornado Warning',panel.event.values)
         self.assertIn('Tornado Watch',panel.event.values)
         panel.event.set('ToRnAdO')
         panel.apply()
+        wait_view(self.owner,panel,False)
         self.assertEqual({r['id'] for r in panel.rows},{'warning','watch'})
         self.assertEqual(panel.event.get(),'ToRnAdO')
         self.assertEqual(panel.counter.get(),'1–2 of 2 changes')
         panel.clear()
+        wait_view(self.owner,panel,False)
         self.assertEqual(len(panel.rows),3)
         panel.text.set('TORNADO')
         panel.apply()
+        wait_view(self.owner,panel,False)
         self.assertEqual({r['id'] for r in panel.rows},{'warning','watch'})
 
     def test_rules_are_applied_before_grouping_and_do_not_hide_cards(self):
@@ -317,6 +321,7 @@ class CombinedNotificationTests(unittest.TestCase):
         self.assertEqual(self.owner.history.history_count(),1)
         self.owner.history_panel.text.set('Cook')
         self.owner.history_panel.apply()
+        wait_view(self.owner,self.owner.history_panel)
         self.assertEqual(len(self.owner.history_panel.rows),1)
         self.owner.history_panel.start.set('wrong')
         self.owner.history_panel.apply()

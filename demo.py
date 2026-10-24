@@ -241,6 +241,8 @@ class DemoPanel:
         self.cards.tick()
 
     def close(self):
+        self.deliveries.query.close()
+        self.deliveries.query.wait()
         if self.future is not None:
             try:
                 self.future.result()

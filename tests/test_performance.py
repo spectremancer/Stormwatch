@@ -95,7 +95,7 @@ class GuiPerformanceTests(unittest.TestCase):
         self.owner.received(self.owner.generation,(data,''))
         self.assertTrue(self.owner.busy)
         self.assertLess(self.owner.count,1000)
-        self.pump(lambda:not self.owner.busy)
+        self.pump(lambda:not self.owner.busy and self.owner.active_query.future is None and self.owner.active_query.pending is None)
         self.assertTrue(heartbeat)
         self.assertLess(heartbeat[0],1000)
         self.assertEqual(self.owner.count,1000)
@@ -105,7 +105,7 @@ class GuiPerformanceTests(unittest.TestCase):
         changes=self.owner.history.connection.total_changes
         if self.owner.timer:self.owner.app.root.after_cancel(self.owner.timer)
         self.owner.received(self.owner.generation,(data,''))
-        self.pump(lambda:not self.owner.busy)
+        self.pump(lambda:not self.owner.busy and self.owner.active_query.future is None and self.owner.active_query.pending is None)
         self.assertEqual(self.owner.count,1000)
         self.assertEqual(self.owner.cards.body.winfo_children(),widgets)
         self.assertEqual(self.owner.history.connection.total_changes,changes)
@@ -118,7 +118,7 @@ class GuiPerformanceTests(unittest.TestCase):
         self.owner.received(self.owner.generation,(data,''))
         processed=self.owner.count
         self.owner.toggle_monitoring()
-        self.pump(lambda:not self.owner.busy)
+        self.pump(lambda:not self.owner.busy and self.owner.active_query.future is None and self.owner.active_query.pending is None)
         self.assertEqual(self.owner.count,processed)
         self.assertEqual(self.owner.history.get_alert('prior-active')['status'],'Active')
         self.service.deliver_desktop.assert_not_called()

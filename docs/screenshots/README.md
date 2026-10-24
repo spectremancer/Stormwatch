@@ -1,13 +1,14 @@
 # README screenshots
 
 These PNGs are unaltered screen captures of real Stormwatch client areas on Linux
-(Python 3.13, Tk 8.6), using the Navy theme. They were captured on October 20, 2026.
+(Python 3.13, Tk 8.6), using the Navy theme. They show the version 1.1 stabilization interface.
 Window chrome, fonts, and operating-system controls can vary across desktops.
 
 The weather, profiles, history, and delivery outcomes are fictional. The main
 window and alert cards label the session **SIMULATION**; notification successes
 and the example failure are database fixtures, not actual device submissions.
-The map displays sample affected-area polygons and saved pins with radar off.
+The map displays a national overview with sample affected-area polygons, state
+boundaries, city labels, and saved pins. Radar is off.
 The Documentation window shows the real bundled guide and its search results.
 
 To regenerate from the repository root with dependencies from `requirements.txt`

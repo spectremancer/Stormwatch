@@ -56,7 +56,7 @@ def main():
                 start=time.perf_counter()
                 ui.running=True
                 ui.received(ui.generation,(data,''))
-                while ui.busy:
+                while ui.busy or ui.active_query.future is not None or ui.active_query.pending is not None:
                     ui.app.root.update()
                     time.sleep(.0005)
                 ui.app.root.update()

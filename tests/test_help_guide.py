@@ -64,7 +64,7 @@ class GuideWindowTests(unittest.TestCase):
         self.assertIn('Try fewer words', guide.area.get())
         guide.search.set('')
         self.app.root.update()
-        self.assertEqual(len(guide.navigation.tree.get_children()), 26)
+        self.assertEqual(len(guide.navigation.tree.get_children()), len(guide.topics))
         guide.copy_topic()
         self.assertIn(guide.heading.get(), guide.window.root.clipboard_get())
 

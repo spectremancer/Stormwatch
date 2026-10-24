@@ -39,9 +39,11 @@ def batch_announcement(alerts, profiles=(), kind='New'):
     if not locations:
         locations = list(dict.fromkeys(p.name for p in profiles if p.name.casefold() not in
             ('us','usa','all us','all us alerts','nationwide','united states','united states of america')))
+    max_areas = min((p.speech_max_areas for p in profiles),default=16)
+    max_chars = min((p.speech_max_chars for p in profiles),default=480)
     displayed, size = [], 0
     for location in locations:
-        if len(displayed)>=16 or size+len(location)>480:
+        if len(displayed)>=max_areas or size+len(location)>max_chars:
             break
         displayed.append(location)
         size += len(location)
@@ -53,10 +55,13 @@ def batch_announcement(alerts, profiles=(), kind='New'):
     latest = max(ends) if ends else None
     until = ''
     if latest:
-        local = latest.astimezone()
-        clock = local.strftime('%I:%M %p').lstrip('0').replace(':00','')
-        until = f" Until {local:%B %d} at {clock} local time."
-    else:
+        def spoken_time(value):
+            local = value.astimezone()
+            return f"{local:%B %d} at {local.strftime('%I:%M %p').lstrip('0').replace(':00','')} local time"
+        earliest = min(ends)
+        until = (f' Expirations range from {spoken_time(earliest)} to {spoken_time(latest)}.'
+                 if earliest != latest else f' Until {spoken_time(latest)}.')
+    if not latest:
         until = ' Expiration time unavailable.'
     if len(ends)!=len(alerts) and ends:
         until += ' Some expiration times are unavailable.'

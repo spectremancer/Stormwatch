@@ -1,12 +1,11 @@
 # Quick start
 ## How do I get started with Stormwatch?
-1. Use Add in the left panel to create a location such as Home.
-2. Find your city or ZIP code, confirm the map pin, name the profile, and save it.
-3. Select the weather event types to monitor for that profile.
-4. Configure sound, speech, and desktop preferences. Repeat for other locations if needed.
-5. Choose a refresh interval, then click Start monitoring.
-6. Check Active Alerts and Map, and confirm the connection health information shows a recent successful refresh.
-The application must remain running and the computer must be awake to obtain new alerts.
+1. Review the first-run Monitoring readiness window. It shows profiles, event counts, channel preferences, and local device prerequisites.
+2. Add a saved location, confirm its approximate pin, and choose event types.
+3. Open Alerts → Notification Preferences… to configure and preview channels for that profile.
+4. Test the devices. Choose the NWS refresh interval, then Start monitoring.
+5. Check the shared connection-health state before relying on Active Alerts and Map.
+Reopen the checklist with the Readiness button or Tools → Readiness Review. The computer must remain awake, connected, and running Stormwatch.
 
 ## What does each main tab do?
 Locations manages saved places and their preferences. Active Alerts shows currently relevant alerts. Alert Feed shows alert changes as a readable stream. Map shows affected areas, saved pins, and optional radar. Notifications explains channel delivery and failures. History searches your locally stored alert records and downloaded historical records.
@@ -72,7 +71,7 @@ Yes. Check all desired monitored types in the sidebar, then use Alerts → Sound
 Click Start monitoring in the sidebar or use Monitoring → Start Monitoring. Pause with the same control or Monitoring → Pause Monitoring. While running and not already fetching, press F5 or choose Monitoring → Refresh Now for an immediate NWS refresh.
 
 ## How do I change the NWS refresh interval?
-Pause monitoring, then choose 30, 60, 90, or 120 seconds using the sidebar selector or Monitoring → Refresh Interval. Start again to use it. The selection persists across sessions. Radar has its own refresh schedule and does not follow this NWS interval.
+Pause monitoring, then choose 30, 60, 90, or 120 seconds using the sidebar selector or Monitoring → Refresh Interval. Start again to use it. The selection persists. Radar retains its independent five-minute schedule. Consecutive connection failures progressively increase retry delays, and provider Retry-After instructions are honored.
 
 ## Does a 30-second interval mean exactly two requests every minute?
 The next scheduled refresh follows completion of the current fetch and processing, so slow requests can extend the time between results. The app avoids overlapping NWS fetches. A failed request also waits for the configured interval before the next scheduled attempt.
@@ -91,7 +90,7 @@ It requires monitoring to be running and no refresh already in progress. Start m
 Read the connection health display for the last successful NWS refresh, next refresh countdown, errors, and coverage notices. The top-right green Monitoring label means the polling loop is enabled; it alone does not confirm a successful connection.
 
 ## What do the red and green status colors mean?
-Red Paused means live monitoring is paused. Green Monitoring means it is running. Check the separate health information for actual freshness, failures, or incomplete coverage. Radar can succeed while NWS fails, or vice versa, because they use different services.
+Paused is red. Current monitoring is green. Connecting, degraded coverage, and stale data use an amber warning state. The main status, connection banner, and location summaries share the same health calculation. Degraded means active data arrived but cancellation coverage is incomplete; it is not a full all-clear.
 
 ## When is information considered stale?
 The health display flags paused monitoring, refresh errors, or a last success older than the larger of 120 seconds and twice the configured interval. Review the displayed timestamp before treating last-known cards as a current picture.
@@ -110,7 +109,7 @@ Use Tools → Diagnostics… for application and connection state, and Tools →
 Cards summarize the event type, affected location, severity, issue information, and expiration countdown. Open the alert details for the full message, instructions, source, and delivery explanation. A short summary or countdown does not replace the official alert's timing and instructions.
 
 ## How are active alerts sorted?
-Warnings appear before watches, followed by other event classes. Within those groups, higher severity comes first. Remaining ties use expiration from longest/latest to shortest/earliest; unknown expiration comes last. This is a priority ordering, not chronological arrival order.
+The default remains warnings before watches, higher severity first, then expiration from latest to earliest, with unknown expiration last. The Active Alerts sort dropdown also offers Soonest expiration, Newest issued, and Urgency. Your selection is saved. Compact cards show more alerts at once without removing full details.
 
 ## Why do I see only some cards at once?
 Active alerts are paginated in groups of 20 to keep the interface responsive during busy weather. Use the page controls to see additional cards. Pagination does not stop monitoring or limit the number of stored relevant alerts.
@@ -176,7 +175,7 @@ Its automatic metadata and imagery cycle is approximately every five minutes whi
 The old image no longer matches the new viewport. The app invalidates it and loads a matching image instead of painting geographically misplaced weather. Controls can be temporarily disabled during a load. Large or rapid view changes may need time to complete.
 
 ## Why is radar limited when I zoom far in or use a very large map?
-RainViewer tiles are requested within a bounded tile budget and provider zoom limit of 7. The app also rejects radar canvases larger than 1800 × 1200 to control load and memory use. Reduce the map size or change the zoom and retry if the displayed error identifies these limits.
+RainViewer tiles remain subject to a bounded tile budget and zoom limit of 7. Large windows now load imagery at a bounded internal resolution and scale it for display, preserving the map extent. Maximizing on a normal high-resolution screen no longer requires shrinking the app to load radar. Fine detail remains limited by the provider resolution.
 
 ## Can I change radar colors, smoothing, or snow rendering?
 The current integration uses Universal Blue coloring with smoothing and separate snow colors. These are fixed request options, not configurable palette controls in the current interface. Radar availability and coverage are determined by the provider.
@@ -227,10 +226,10 @@ Open Alerts → Speech Settings…, enable Read alerts aloud, choose the event t
 Speech is intentionally limited to new events issued after the current monitoring session starts. Existing alerts still appear in cards and history, but they are not read as a backlog. An alert needs a usable timezone-aware NWS issue timestamp after the cutoff, even if it is a tornado or hurricane event.
 
 ## How are many simultaneous alerts aggregated?
-After a refresh, eligible alerts are grouped by event type. A spoken report names the type, deduplicated affected locations with pauses, and the latest known effective expiration for that batch. For example, multiple Gale Warnings from the same pull become one grouped report rather than a separate speech item per alert.
+Eligible alerts are grouped by event type and the saved locations that allow speech. Different location groups receive separate reports instead of combining unrelated regions. Locations are deduplicated with pauses. When end times differ, speech announces an expiration range. Only active, post-start eligible versions are spoken.
 
 ## Why does speech not read every location in a large batch?
-Spoken area lists are bounded to keep a busy-weather report usable: up to 16 areas and a limited text budget, with remaining areas summarized by a count. Read the alert details for the complete location descriptions and individual expiration times.
+Alerts → Notification Preferences… offers Brief (4 areas), Standard (8 areas), and Detailed (16 areas) report lengths for the selected profile. Text budgets also keep reports concise; omitted areas are summarized by count. Multiple matching profiles use the strictest selected limit. Full areas and individual end times remain in the alert details.
 
 ## Are cancellations and expirations spoken as new alerts?
 No. Cancelled, expired, superseded, and no-longer-active events are excluded from new spoken coverage. If a queued or speaking batch becomes invalid, the owned speech process is stopped and remaining eligible unsent alerts can be regrouped. Part of a still-valid report may repeat after such an interruption.
@@ -360,7 +359,7 @@ Live records, NWS archive downloads, and local GeoJSON imports have different or
 
 # Metrics & analysis
 ## How do I see a summary of historical and active event types?
-Open Data → Metrics. It summarizes each event type's historical alert IDs, recorded changes, downloaded changes, and current active count. Reopen or use Refresh to update the local summary; this does not itself fetch NWS or trigger notifications.
+Open Data → Metrics. Event totals compare historical IDs, recorded changes, downloaded changes, and current active counts. Timeline plots the latest 30 dates with recorded changes. Coverage & analysis explains source/time-basis counts, severities, county UGC comparisons, and latest-message validity. Analysis loads on demand in the background. Reopen or Refresh to update it.
 
 ## What is the difference between alert IDs and recorded changes?
 Historical alert IDs are distinct NWS message identifiers. Recorded changes include versions and lifecycle transitions, so one ID can have several changes. Neither is necessarily a count of unique physical storms. Downloaded changes are a subset of recorded changes.
@@ -414,7 +413,7 @@ Enable Close to tray in Settings → General. The window hides only when a usabl
 Use Open Stormwatch from the tray menu to restore it. File → Exit, Ctrl+Q, or the tray's Quit action fully stops the app, including monitoring and speech. The main title-bar close action follows your Close to tray preference.
 
 ## Why does the window stay visible instead of hiding?
-The app avoids hiding itself without a working way to reopen it. A missing or unsupported tray backend, particularly on some Linux desktops, can keep the main window visible. Review diagnostics and desktop tray support rather than repeatedly closing the window.
+The app avoids hiding without a working tray icon and menu. Missing or unsupported Linux tray backends can keep the main window visible. The normal entry point also prevents a second copy from competing for audio, startup settings, or a staged restore. Restore an existing copy from the tray before starting another.
 
 ## How do I start automatically when I log into Windows?
 Enable the Windows launch-at-login option in Settings → General. It creates a per-user startup entry, without requiring an administrator installation, and launches monitoring with --monitor. Packaged executables and source launches use different appropriate startup commands.
@@ -433,13 +432,13 @@ On Windows, look under %LOCALAPPDATA%/Stormwatch. On Linux, use $XDG_STATE_HOME/
 It holds saved preferences, profiles, historical records, processed alert versions, and channel delivery information. These are distinct concepts: seeing a version is not the same as successfully sounding, speaking, or submitting a desktop notification for it. Legacy state may also exist in storm_alert_state.json.
 
 ## How do I make a complete backup?
-Fully exit the app first, rather than merely minimizing to tray. Copy processed-alerts.sqlite3 and any remaining accompanying -wal and -shm files together as one closed-app set. Keep the copy in a safe backup location. CSV exports do not preserve all settings, profiles, or delivery receipts.
+Open Data → Storage & Retention… and choose Back up database…. The app creates a validated, consistent SQLite backup including profiles, settings, history, and delivery receipts, even with WAL journals. Choose a destination outside the live database and its journals. CSV exports remain analysis files rather than full backups.
 
 ## How do I restore a backup?
-Keep the application fully closed, preserve a copy of the current data first, then restore the complete compatible database file set to its data directory. The app has no dedicated restore wizard. Avoid mixing a database with unrelated journal files or editing a live database while monitoring is running.
+Open Data → Storage & Retention… and choose Restore backup on next launch…. Select a complete Stormwatch SQLite backup and confirm replacement. It is validated and staged; current monitoring is not replaced in place. Fully exit and restart through the normal app entry point to apply it. A .before-restore.sqlite3 backup preserves the current database first. Only one normal application instance is allowed during this process. If the database cannot open, fully exit and run python main.py --restore-backup /path/to/backup.sqlite3 (or the packaged executable with the same flag). A damaged original is preserved before recovery.
 
 ## How do I inspect storage and retention?
-Open Data → Storage & Retention… for the current read-only summary. It does not delete records. Clearing the visible feed does not shrink or reset historical data. Do not delete processed-delivery receipts merely to clean the screen, as that can change duplicate-notification behavior.
+Data → Storage & Retention… provides backup, restore, and explicit archive cleanup. Choose Keep all history, 30 days, 90 days, or 365 days. Apply archive retention… asks for confirmation and creates a pre-retention backup before removing old inactive archive rows. Active data and version/delivery deduplication receipts remain. The policy does not silently delete data every day. Rotating logs keep five 2 MiB backups.
 
 ## Does the app send my history when I report an issue?
 Help → Report an Issue… opens the GitHub issue page; it does not automatically attach or send your local logs or history. Review any material you choose to share, especially private location names, coordinates, and message content. NWS geographic resolution and live provider requests still require normal network communication.
@@ -503,3 +502,32 @@ The built-in startup preference is Windows-specific and is disabled on Linux. Th
 
 ## What network services are needed for the full app?
 NWS provides live alerts, geographic resolution, and recent historical downloads through api.weather.gov. RainViewer provides optional radar metadata and tile imagery. Offline place lookup, bundled map outlines, saved history searches, Metrics, and Documentation can work without fetching new live weather. Provider outages can affect these services independently.
+
+# Workspace & filters
+## How do I search the weather event checkboxes?
+Type part of an event name into the sidebar search field. The adjacent category dropdown filters warnings, watches, advisories, statements, outlooks, or selected events. These controls change visibility, not saved selections. Clear the search and choose All to restore the full list.
+
+## How do event presets work?
+The Event presets dropdown replaces the selected profile's monitored types with Severe Weather, Winter, Marine, or Tropical selections. Review the resulting checkboxes; changes save automatically. Other profiles and separate sound/speech allowlists retain their own selections.
+
+## How do I give the map or history more room?
+Drag the divider between the sidebar and main workspace. Use Event filters in the header to hide or restore the sidebar. Small displays start with the sidebar collapsed when appropriate. Compact cards and the saved sort dropdown in Active Alerts help fit more information on screen.
+
+## How do I connect an alert card with its map area?
+Choose Show on map on a card to open Map and zoom to that alert's available geometry. Clicking an outline opens its details and selects the corresponding card for later inspection. Alerts without geometry remain available in the cards and official area description.
+
+## How do I add state, county, and city context to the map?
+Use Layers… beside the map controls. State boundaries and major-city labels are available offline; optional county boundaries appear after zooming in. These bundled snapshots are geographic context, not current surveying or jurisdictional authority. The popup explains warning/watch/advisory colors and saved-location pins.
+
+## Why does a large archive search show Searching archive?
+Queries run on independent background readers. Starting a new search supersedes older results, so a slow previous search does not replace the latest filters. Hidden History and Notifications pages are refreshed on demand. Trigram indexing accelerates substring text searches where SQLite supports it, with a compatible fallback.
+
+# Releases & diagnostics
+## How do I identify the application build?
+Help → About Stormwatch and Tools → Diagnostics… display the version, build identifier, and source commit captured at startup. Packaged builds embed their build's source commit and modification flag. Include this information in reports together with your OS and whether you run source or a packaged executable. Help → Release Downloads opens the project's versioned release page.
+
+## How are release downloads checked?
+The release workflow builds on Windows, runs the suite, starts the actual packaged executable in offline self-test mode, creates a per-user installer, and produces a source-commit manifest and SHA-256 checksums. The manifest rejects an executable whose checksum or embedded clean source commit does not match its acceptance report and release checkout. A published version tag identifies a release. Locally pushing source does not automatically rebuild the older checked-in executable.
+
+## Does a successful self-test prove physical notifications work?
+No. The offline self-test checks startup, resources, temporary storage, map data, MP3 decoding, and shutdown. Real speakers, desktop notifications, speech voices, tray menus, sleep/wake, and display scaling still require native desktop acceptance checks. Signing is a separate release step and must not be inferred from a checksum.

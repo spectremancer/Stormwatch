@@ -11,6 +11,7 @@ from tkinter import filedialog
 
 from TkFlow import Button, Checkbox, Dropdown, Label, Menu, TextArea, Window
 from appearance import SKINS
+from version import IDENTITY, BUILD_INFO
 from application_paths import state_directory
 
 
@@ -23,6 +24,7 @@ class ApplicationMenu:
         self.import_busy = False
         self.import_cancel = threading.Event()
         self.documentation = None
+        self.storage_windows = []
         self.groups = {}
         for name in ('File', 'Monitoring', 'Alerts', 'Data', 'Tools', 'Settings', 'Help'):
             self.groups[name] = self.bar.dropdown(name)
@@ -44,6 +46,7 @@ class ApplicationMenu:
                 value=f'{seconds} seconds', command=lambda n=seconds: owner.set_refresh_interval(f'{n} seconds'))
 
         alerts = self.groups['Alerts']
+        alerts.add_command('Notification Preferences…',lambda:__import__('workspace_tools').NotificationCenter(owner))
         alerts.add_command('Sound Settings…', owner.edit_sound_events)
         alerts.add_command('Speech Settings…', owner.edit_speech_events)
         alerts.add_command('Test Notification…', self.test_notification)
@@ -62,6 +65,7 @@ class ApplicationMenu:
 
         tools = self.groups['Tools']
         tools.add_command('Demo Mode', owner.open_demo)
+        tools.add_command('Readiness Review',lambda:__import__('workspace_tools').readiness(owner))
         tools.add_command('Diagnostics…', self.diagnostics)
         tools.add_command('Open Log Folder', self.open_logs)
         settings = self.groups['Settings']
@@ -73,6 +77,7 @@ class ApplicationMenu:
         help_menu.add_command('NWS Alert Definitions', lambda: webbrowser.open('https://www.weather.gov/safety/'))
         help_menu.add_command('Keyboard Shortcuts', self.shortcuts)
         help_menu.add_command('Report an Issue…', lambda: webbrowser.open('https://github.com/spectremancer/Stormwatch/issues/new'))
+        help_menu.add_command('Release Downloads',lambda:webbrowser.open('https://github.com/spectremancer/Stormwatch/releases'))
         help_menu.add_command('About Stormwatch', self.about)
 
         for sequence, action in (('<F5>', self.refresh_now), ('<Control-f>', self.search_history),
@@ -188,6 +193,8 @@ class ApplicationMenu:
         self.import_cancel.set()
 
     def wait(self):
+        for panel in self.storage_windows:
+            panel.wait()
         if self.import_future is not None:
             try:
                 self.import_future.result()
@@ -288,6 +295,8 @@ class ApplicationMenu:
         for name in ('TkDefaultFont', 'TkTextFont', 'TkMenuFont'):
             font.nametofont(name, root=self.root).configure(size=size)
         self.owner.app.style.configure('.', font=(self.owner.font_family, size))
+        if self.documentation is not None and not self.documentation.window._closed:
+            self.documentation.area.text.tag_configure('question',font=(self.owner.font_family,size,'bold'))
         if save:
             self.owner.status.set(f'Control text size set to {size} points.')
 
@@ -305,15 +314,14 @@ class ApplicationMenu:
             'Alert-map boundaries may come from NWS alert polygons or resolved affected zones. Alerts lacking boundaries remain in Active alerts.')
 
     def storage(self):
-        path = self.owner.history.path
-        size = sum(p.stat().st_size for p in (path, Path(str(path)+'-wal'), Path(str(path)+'-shm')) if p.exists())
-        self.info('Storage & retention', f'Local database:\n{path}\n\nDatabase and journal size: {size / 1048576:.2f} MiB\n\n'
-            'Alert history and delivery receipts are retained. Expired and cancelled alerts leave current views, but remain searchable.\n\n'
-            'Export matching history to CSV from File or Data. This menu does not delete records; retaining delivery receipts prevents duplicate notifications.')
+        from storage_tools import StorageTools
+        panel = StorageTools(self.owner)
+        self.storage_windows.append(panel)
+        return panel.window
 
     def diagnostics(self):
         owner = self.owner
-        self.info('Diagnostics', f'Platform: {sys.platform}\nPython: {sys.version.split()[0]}\n'
+        self.info('Diagnostics', f'{IDENTITY}\nSource commit: {BUILD_INFO["commit"]}\nModified source: {BUILD_INFO["dirty"]}\nPlatform: {sys.platform}\nPython: {sys.version.split()[0]}\n'
             f'Monitoring: {owner.running}\nRequest in progress: {owner.busy}\n'
             f'Enabled locations: {sum(p.enabled for p in owner.profiles)}\n'
             f'Current matching alerts: {len(owner.snapshot)}\n'
@@ -349,7 +357,7 @@ class ApplicationMenu:
         return self.open_documentation('Keyboard & menus')
 
     def about(self):
-        self.info('About Stormwatch', 'STORMWATCH\nWeather intelligence for your locations\n\n'
+        self.info('About Stormwatch', IDENTITY+f'\nSource: {BUILD_INFO["commit"][:12]}'+(' · modified source' if BUILD_INFO['dirty'] else '')+'\nWeather intelligence for your locations\n\n'
             'Location-aware NWS alerts, live maps, searchable history, and independent notification channels.\n\n'
             'Weather alerts: National Weather Service\nRadar imagery: RainViewer\nInterface: TkFlow / Tk\n\n'
             'Project: github.com/spectremancer/Stormwatch')

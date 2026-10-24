@@ -192,7 +192,7 @@ class ApplicationMenuTests(unittest.TestCase):
         with patch.object(self.ui,'poll') as poll:
             menu.invoke('Start Monitoring')
             self.assertTrue(self.ui.running)
-            self.assertEqual(str(self.ui.state.widget.cget('foreground')),self.ui.app.palette['good'])
+            self.assertEqual(str(self.ui.state.widget.cget('foreground')),self.ui.app.palette['warning'])
             self.assertEqual(menu.entrycget('Start Monitoring','state'),'disabled')
             self.assertEqual(menu.entrycget('Refresh Interval','state'),'disabled')
             timer = self.ui.app.after(60000, lambda: None)

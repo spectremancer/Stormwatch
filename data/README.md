@@ -33,3 +33,21 @@ search uses its five-digit base ZIP.
 
 City names and nearby-place labels support offline location setup. Official NWS
 zone resolution still occurs over HTTPS when a user saves a location.
+
+## State, county, and city context
+
+`us_states.geojson` is the US subset (51 features) of Natural Earth's public-domain
+1:50m admin-1 state/province boundaries. Source:
+https://github.com/nvkelso/natural-earth-vector/blob/master/geojson/ne_50m_admin_1_states_provinces.geojson
+
+`us_counties.geojson` contains 3,221 county features from the US Census-derived
+Plotly dataset: https://github.com/plotly/datasets/blob/master/geojson-counties-fips.json
+Only the display name and original geometry are retained. Boundaries are snapshots
+for geographic context, not current jurisdictional, surveying, or navigation data.
+County context is optional and appears only after zooming in. Major-city labels
+use a small bundled list of approximate city-center coordinates in `map_context.py`.
+
+Bundled geometry SHA-256 values:
+
+- `us_states.geojson`: `b1121a045f58f9fd026b7fa60b9bf9688fd734fe92087ce0e48490f8ec92298e`
+- `us_counties.geojson`: `0968b870b6288e4772afe6819ae7b76b2ba7241aa727a522288c290fa8f05f03`

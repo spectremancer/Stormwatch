@@ -5,6 +5,7 @@ from tkinter import ttk
 from TkFlow import Button, Checkbox, Label, TextArea
 from TkFlow.widget import Widget
 from locations import LocationProfile
+from async_views import LatestQuery
 
 
 def delivery_status(row, running=True, automatic=True):
@@ -57,6 +58,7 @@ class DeliveryTable(Widget):
 class DeliveryPanel:
     def __init__(self, parent, store, retry, running=lambda: True, title='Notification delivery', automatic=True, compact=False):
         self.store, self.retry, self.running = store, retry, running
+        self.query = LatestQuery(parent.app)
         self.automatic = automatic
         self.rows = []
         self.page = 0
@@ -94,9 +96,19 @@ class DeliveryPanel:
     def refresh(self):
         current = self.current()
         selected_key = self.key(current) if current else None
-        total = self.store.delivery_count(self.failed_only.get())
-        self.page = min(self.page, max(0, (total - 1) // 50))
-        self.rows = self.store.delivery_rows(offset=self.page * 50, failed_only=self.failed_only.get())
+        page, failed = self.page, self.failed_only.get()
+        def query():
+            with self.store.read_snapshot() as reader:
+                total = reader.delivery_count(failed)
+                current = min(page,max(0,(total-1)//50))
+                return total,current,reader.delivery_rows(offset=current*50,failed_only=failed)
+        self.query.request(query,lambda result:self.render(result,selected_key),
+                           lambda error:self.details.set(f'Delivery search failed: {error}'))
+
+    def render(self, result, selected_key):
+        if self.query.app._closed or self.table._destroyed:
+            return
+        total,self.page,self.rows = result
         self.table.tree.delete(*self.table.tree.get_children())
         self.row_map = {}
         for i, row in enumerate(self.rows):
